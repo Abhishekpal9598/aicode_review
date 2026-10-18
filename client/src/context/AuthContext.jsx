@@ -1,65 +1,106 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import api from '../services/api';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import apiClient from '../services/apiClient';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  /**
+   * Verify and hydrate existing session from HttpOnly cookie on initial mount.
+   */
+  const checkSession = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await apiClient.getCurrentUser();
+      if (res && res.data?.user) {
+        setUser(res.data.user);
+      } else {
+        setUser(null);
+      }
+    } catch {
+      // Unauthenticated / expired cookie / network issue
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function loadUser() {
-      if (!token) {
-        setLoading(false);
-        return;
-      }
-      try {
-        const res = await api.get('/auth/me');
+    checkSession();
+  }, [checkSession]);
+
+  /**
+   * Log in user with credentials and store profile in state.
+   */
+  const login = async (credentials) => {
+    setError(null);
+    try {
+      const res = await apiClient.login(credentials);
+      if (res && res.data?.user) {
         setUser(res.data.user);
-      } catch (err) {
-        console.error('Failed to load user:', err);
-        localStorage.removeItem('token');
-        setToken(null);
-        setUser(null);
-      } finally {
-        setLoading(false);
+        return res.data.user;
       }
+      throw new Error('Authentication response missing user profile.');
+    } catch (err) {
+      setError(err.message || 'Invalid email or password.');
+      throw err;
     }
-    loadUser();
-  }, [token]);
-
-  const login = async (email, password) => {
-    const res = await api.post('/auth/login', { email, password });
-    const { token: newToken, user: userData } = res.data;
-    localStorage.setItem('token', newToken);
-    setToken(newToken);
-    setUser(userData);
-    return res.data;
   };
 
-  const register = async (email, password, name) => {
-    const res = await api.post('/auth/register', { email, password, name });
-    const { token: newToken, user: userData } = res.data;
-    localStorage.setItem('token', newToken);
-    setToken(newToken);
-    setUser(userData);
-    return res.data;
+  /**
+   * Register a new developer account.
+   */
+  const register = async (userData) => {
+    setError(null);
+    try {
+      const res = await apiClient.register(userData);
+      return res;
+    } catch (err) {
+      setError(err.message || 'Registration failed.');
+      throw err;
+    }
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    setToken(null);
-    setUser(null);
+  /**
+   * Log out active session and clear client state.
+   */
+  const logout = async () => {
+    try {
+      await apiClient.logout();
+    } catch {
+      // Proceed with client cleanup regardless
+    } finally {
+      setUser(null);
+      setError(null);
+    }
   };
 
-  return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const clearError = () => setError(null);
+
+  const value = {
+    user,
+    isAuthenticated: Boolean(user),
+    isLoading,
+    error,
+    login,
+    register,
+    logout,
+    clearError,
+    refreshUser: checkSession
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
-  return useContext(AuthContext);
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 }
+
+export default AuthContext;
