@@ -16,7 +16,7 @@ export const injectionRules = [
   {
     ruleId: 'SEC-PY-SQL-001',
     name: 'Raw SQL String Formatting in Python',
-    title: 'Raw SQL String Formatting',
+    title: 'Raw SQL String Formatting in Execution',
     category: 'SEC',
     severity: 'CRITICAL',
     owaspCategory: 'A03:2021-Injection',
@@ -24,11 +24,29 @@ export const injectionRules = [
     confidence: 'HIGH',
     languages: ['python'],
     scanRaw: false,
-    regex: /\.(?:execute|cursor)\s*\(\s*(?:f["'][^"']*(?:SELECT|INSERT|UPDATE|DELETE)[^"']*\{|["'][^"']*(?:SELECT|INSERT|UPDATE|DELETE)[^"']*["']\s*\%|["'][^"']*(?:SELECT|INSERT|UPDATE|DELETE)[^"']*["']\s*\.\s*format\s*\()/gi,
+    regex: /\.(?:execute|cursor)\s*\(\s*(?:f["'][^"']*(?:SELECT|INSERT|UPDATE|DELETE)[^"']*\{|["'][^"']*(?:SELECT|INSERT|UPDATE|DELETE)[^"']*["']\s*[%+]|["'][^"']*(?:SELECT|INSERT|UPDATE|DELETE)[^"']*["']\s*\.\s*format\s*\()/gi,
     explanation:
-      'Dynamically constructing SQL queries using f-strings, % formatting, or str.format() allows untrusted input to alter query logic, enabling SQL injection.',
-    suggestedSnippet: 'cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))',
-    remediation: 'Use parameterized query placeholders (%s or ?) to pass user input separately from the SQL statement.'
+      'Dynamically constructing SQL queries directly inside execute() using f-strings, concatenation (+), % formatting, or str.format() allows untrusted input to alter query logic, enabling SQL injection (CWE-89).',
+    suggestedSnippet: 'cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))',
+    remediation: 'Use parameterized query placeholders (? for sqlite3 or %s for standard DB-API) to pass user input separately as a tuple.'
+  },
+  {
+    ruleId: 'SEC-PY-SQL-002',
+    name: 'SQL Query Construction via Dynamic String Concatenation in Python',
+    title: 'SQL Injection via Dynamic String Concatenation',
+    category: 'SEC',
+    severity: 'CRITICAL',
+    owaspCategory: 'A03:2021-Injection',
+    cwe: 'CWE-89',
+    confidence: 'HIGH',
+    languages: ['python'],
+    scanRaw: false,
+    regex:
+      /(?:\b(?:query|sql|stmt|statement|cmd)\s*=\s*)?(?:"[^"\\]*(?:SELECT|INSERT|UPDATE|DELETE)[^"\\]*"\s*[\+\%]|'[^'\\]*(?:SELECT|INSERT|UPDATE|DELETE)[^'\\]*'\s*[\+\%]|f["'][^"']*(?:SELECT|INSERT|UPDATE|DELETE)[^"']*\{|["'][^"']*(?:SELECT|INSERT|UPDATE|DELETE)[^"']*["']\s*\.\s*format\s*\()/gi,
+    explanation:
+      'Dynamically constructing SQL queries using string concatenation (+) or string interpolation allows untrusted user input to alter SQL query semantics and logic, enabling SQL Injection (CWE-89). Attackers can bypass authentication, view unauthorized records, or drop tables.',
+    suggestedSnippet: 'cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))',
+    remediation: 'Never concatenate untrusted variables into SQL query strings. Use parameterized queries with bound placeholders (? for sqlite3 or %s for PostgreSQL/MySQL) and pass parameters as a tuple to execute().'
   },
   {
     ruleId: 'SEC-PY-CMD-001',

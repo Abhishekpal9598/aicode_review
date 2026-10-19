@@ -2,6 +2,28 @@
  * Language definitions, starter templates, extension mappings, and telemetry formatters.
  */
 
+import {
+  detectLanguageFromContent,
+  detectLanguageFromExtension,
+  detectLanguage,
+  CONFIDENCE_LEVELS,
+  EXTENSION_MAP
+} from '../services/languageDetector.js';
+
+export {
+  detectLanguageFromContent,
+  detectLanguageFromExtension,
+  detectLanguage,
+  CONFIDENCE_LEVELS,
+  EXTENSION_MAP
+};
+
+export const AUTO_DETECT_OPTION = {
+  id: 'auto',
+  label: 'Auto Detect',
+  isAuto: true
+};
+
 export const PYTHON_STARTER = `"""
 AI Code Review Platform — Python Review Workspace
 Analyze algorithms, time/space complexity, and security vulnerabilities.
@@ -218,23 +240,14 @@ export const ALL_SUPPORTED_EXTENSIONS = [
  * @param {string} fileName
  * @returns {object|null}
  */
-export function getLanguageFromFileName(fileName) {
+export function getLanguageFromFileName(fileName, code = '') {
   if (!fileName || typeof fileName !== 'string') return null;
 
-  const lowerName = fileName.toLowerCase().trim();
-  const dotIndex = lowerName.lastIndexOf('.');
-  if (dotIndex === -1) return null;
-
-  const ext = lowerName.slice(dotIndex);
-
-  // Ambiguous .h defaults to C
-  if (ext === '.h') {
-    return SUPPORTED_LANGUAGES.find((l) => l.id === 'c') || null;
+  const detected = detectLanguageFromExtension(fileName, code);
+  if (detected.language) {
+    return SUPPORTED_LANGUAGES.find((lang) => lang.id === detected.language) || null;
   }
-
-  return (
-    SUPPORTED_LANGUAGES.find((lang) => lang.extensions.includes(ext)) || null
-  );
+  return null;
 }
 
 /**
@@ -280,4 +293,35 @@ export function computeTelemetry(text) {
     bytes = new Blob([safeText]).size;
   }
   return { lines, chars, bytes };
+}
+
+/**
+ * Detects whether the editor buffer contains strong syntax signatures of a different language.
+ * @param {string} code
+ * @param {string} currentLang
+ * @returns {{ isMismatch: boolean, detectedLanguage: string|null, detectedLabel: string|null }}
+ */
+export function detectLanguageMismatch(code, currentLang) {
+  if (!code || typeof code !== 'string' || code.trim().length < 15) {
+    return { isMismatch: false, detectedLanguage: null, detectedLabel: null };
+  }
+
+  const lang = (currentLang || '').toLowerCase().trim();
+  const detection = detectLanguageFromContent(code);
+
+  if (
+    detection &&
+    detection.language &&
+    detection.language !== lang &&
+    detection.confidence === CONFIDENCE_LEVELS.HIGH
+  ) {
+    const target = SUPPORTED_LANGUAGES.find((l) => l.id === detection.language);
+    return {
+      isMismatch: true,
+      detectedLanguage: detection.language,
+      detectedLabel: target ? target.label : detection.language
+    };
+  }
+
+  return { isMismatch: false, detectedLanguage: null, detectedLabel: null };
 }

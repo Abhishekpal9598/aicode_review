@@ -61,16 +61,14 @@ describe('Phase 5: Frontend Dashboard Tests (Tests 6 - 12)', () => {
       </MemoryRouter>
     );
 
-    // Verify welcome greeting with user name
+    // Verify welcome greeting with user name and async DB connection telemetry
     await waitFor(() => {
       expect(screen.getByText(/Welcome back, Ada Lovelace/i)).toBeInTheDocument();
+      expect(screen.getByText(/Database Connected/i)).toBeInTheDocument();
     });
 
     // Verify AI Engine status is unreleased Phase 8
     expect(screen.getByText(/AI Engine: Coming in Phase 8/i)).toBeInTheDocument();
-
-    // Verify dynamic DB connected telemetry
-    expect(screen.getByText(/Database Connected/i)).toBeInTheDocument();
 
     // Verify Overview KPI cards values
     expect(screen.getByText('Total Code Reviews')).toBeInTheDocument();

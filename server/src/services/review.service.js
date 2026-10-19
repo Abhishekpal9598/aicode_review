@@ -25,6 +25,7 @@ import { geminiService } from './gemini.service.js';
 import { persistReviewAtomic } from './reviewPersistence.service.js';
 import { fuseFindings, validateCandidateContent, compareFindingsTotal } from './hybridFusion.service.js';
 import { getSecurityRuleById } from './staticAnalyzer/rules/security/index.js';
+import { evaluateComplexity } from './staticAnalyzer/performance/index.js';
 
 /**
  * Escapes special regex characters in user search input to prevent ReDoS attacks.
@@ -120,8 +121,37 @@ export async function executeReview({ code, language, title, fileName, sourceTyp
     suggestedSnippet: f.suggestedSnippet || '',
     explanation: f.explanation || '',
     ruleId: f.ruleId || null,
-    source: 'static'
+    source: 'static',
+    cwe: f.cwe || null,
+    owaspCategory: f.owaspCategory || null,
+    confidence: f.confidence || null,
+    remediation: f.remediation || ''
   }));
+
+  // Deterministic Performance & Big-O Complexity Evaluation (Phase 10)
+  const perfEval = evaluateComplexity(safeCode, safeLang);
+  const performanceIssues = perfEval.findings.map((f) => ({
+    category: 'performance',
+    severity: f.severity,
+    title: f.title,
+    description: f.explanation || f.title,
+    lineStart: f.lineStart,
+    lineEnd: f.lineEnd,
+    columnStart: 1,
+    columnEnd: 1,
+    originalSnippet: f.originalSnippet || '',
+    suggestedSnippet: f.suggestedSnippet || '',
+    explanation: f.explanation || '',
+    ruleId: f.ruleId || null,
+    source: 'static',
+    cwe: null,
+    owaspCategory: null,
+    confidence: f.confidence || 'HIGH',
+    remediation: f.optimization || '',
+    complexityEstimate: f.complexityEstimate || null
+  }));
+
+  const allStaticIssues = [...staticIssues, ...performanceIssues];
 
   // 3. AI Semantic Analysis via Google Gemini (Transmits ONLY redactedCode)
   let geminiResult = null;
@@ -144,6 +174,7 @@ export async function executeReview({ code, language, title, fileName, sourceTyp
   let metrics;
   let timeComplexity;
   let spaceComplexity;
+  let complexityType;
   let suggestedCode;
   let refactoringRationale;
   let finalIssues = [];
@@ -154,6 +185,7 @@ export async function executeReview({ code, language, title, fileName, sourceTyp
     // -------------------------------------------------------------------------
     reviewMode = 'hybrid';
     aiAvailable = true;
+    complexityType = 'ai-assisted';
 
     // Step 1: AI Composite Score
     const aiCompositeScore = geminiResult.aiCompositeScore;
@@ -166,15 +198,15 @@ export async function executeReview({ code, language, title, fileName, sourceTyp
     grade = gradeForScore(overallScore);
 
     summary = geminiResult.summary;
-    timeComplexity = geminiResult.timeComplexity;
-    spaceComplexity = geminiResult.spaceComplexity;
+    timeComplexity = geminiResult.timeComplexity || perfEval.timeComplexity;
+    spaceComplexity = geminiResult.spaceComplexity || perfEval.spaceComplexity;
     suggestedCode = geminiResult.suggestedCode;
     refactoringRationale = geminiResult.refactoringRationale;
 
     // Hybrid Security Finding Fusion & Normalization (Phase 9 Step 3)
     const activeMapper = geminiResult.coordinateMapper || coordinateMapper;
     const fusionResult = fuseFindings({
-      staticFindings: staticIssues,
+      staticFindings: allStaticIssues,
       aiFindings: geminiResult.issues || [],
       sourceCode: safeCode,
       redactedCode,
@@ -210,14 +242,15 @@ export async function executeReview({ code, language, title, fileName, sourceTyp
 
     summary =
       'AI semantic analysis was unavailable. Review completed using deterministic static code analysis engine.';
-    timeComplexity = null;
-    spaceComplexity = null;
+    timeComplexity = perfEval.timeComplexity;
+    spaceComplexity = perfEval.spaceComplexity;
+    complexityType = perfEval.complexityType;
     suggestedCode = null;
     refactoringRationale = null;
 
     const rawLines = safeCode.split(/\r\n|\r|\n/);
     const validStaticIssues = [];
-    for (const s of staticIssues) {
+    for (const s of allStaticIssues) {
       const { isValid, sanitizedIssue } = validateCandidateContent(s, rawLines);
       if (isValid && sanitizedIssue) {
         validStaticIssues.push(sanitizedIssue);
@@ -229,7 +262,7 @@ export async function executeReview({ code, language, title, fileName, sourceTyp
     metrics = {
       bugScore: null,
       securityScore: null,
-      performanceScore: null,
+      performanceScore: perfEval.metrics.performanceScore,
       maintainabilityScore: null,
       aiCompositeScore: null,
       staticDeductions,
@@ -277,6 +310,7 @@ export async function executeReview({ code, language, title, fileName, sourceTyp
     metrics,
     timeComplexity,
     spaceComplexity,
+    complexityType,
     suggestedCode,
     refactoringRationale,
     executionTimeMs
@@ -668,6 +702,282 @@ export async function getSecurityReview(reviewId, userId, query = {}) {
   };
 }
 
+/**
+ * Retrieves dedicated performance analysis details strictly scoped to the authenticated user.
+ *
+ * @param {string|mongoose.Types.ObjectId} reviewId - Target review ObjectId
+ * @param {string|mongoose.Types.ObjectId} userId - Authenticated user's ID
+ * @param {object} [query={}] - Optional filters (severity, source, sort)
+ * @returns {Promise<object|null>} Performance analysis payload or null if not found
+ */
+export async function getPerformanceReview(reviewId, userId, query = {}) {
+  // 1. Authenticated tenant & reviewId validation
+  if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+    throw new ApiError(400, 'A valid authenticated userId is required', 'INVALID_USER_ID');
+  }
+  if (!reviewId || !mongoose.Types.ObjectId.isValid(reviewId)) {
+    throw new ApiError(400, 'A valid reviewId is required', 'INVALID_REVIEW_ID');
+  }
+
+  const safeUserId = new mongoose.Types.ObjectId(userId);
+  const safeReviewId = new mongoose.Types.ObjectId(reviewId);
+
+  // 1. Fetch parent review with tenant isolation
+  const review = await CodeReview.findOne({ _id: safeReviewId, userId: safeUserId }).lean();
+  if (!review) {
+    return null;
+  }
+
+  // 2. Fetch analysis result and performance category issues
+  const [analysis, rawIssues] = await Promise.all([
+    AnalysisResult.findOne({ reviewId: safeReviewId, userId: safeUserId }).lean(),
+    ReviewIssue.find({ reviewId: safeReviewId, userId: safeUserId, category: 'performance' }).lean()
+  ]);
+
+  // 3. Fallback evaluation if review was generated prior to Phase 10 or issues empty
+  let evaluated = null;
+  if (review.rawCode) {
+    evaluated = evaluateComplexity(review.rawCode, review.language);
+  }
+
+  // 4. Derive performance scores and complexities
+  let performanceScore = 100;
+  if (analysis && analysis.metrics && typeof analysis.metrics.performanceScore === 'number') {
+    performanceScore = analysis.metrics.performanceScore;
+  } else if (evaluated) {
+    performanceScore = evaluated.metrics.performanceScore;
+  }
+  const performanceGrade = gradeForScore(performanceScore);
+
+  const timeComplexity = analysis?.timeComplexity || evaluated?.timeComplexity || 'O(1)';
+  const spaceComplexity = analysis?.spaceComplexity || evaluated?.spaceComplexity || 'O(1)';
+  const complexityType = analysis?.complexityType || (analysis?.aiAvailable ? 'ai-assisted' : (evaluated?.complexityType || 'deterministic'));
+
+  // If rawIssues is empty and evaluated produced findings, dynamically enrich issues
+  let enrichedIssues = rawIssues;
+  if (enrichedIssues.length === 0 && evaluated && evaluated.findings.length > 0) {
+    enrichedIssues = evaluated.findings.map((f) => ({
+      _id: new mongoose.Types.ObjectId(),
+      reviewId: safeReviewId,
+      analysisResultId: analysis?._id || new mongoose.Types.ObjectId(),
+      userId: safeUserId,
+      category: 'performance',
+      severity: f.severity,
+      title: f.title,
+      description: f.explanation,
+      lineStart: f.lineStart,
+      lineEnd: f.lineEnd,
+      columnStart: 1,
+      columnEnd: 1,
+      originalSnippet: f.originalSnippet,
+      suggestedSnippet: f.suggestedSnippet,
+      explanation: f.explanation,
+      ruleId: f.ruleId,
+      source: 'static',
+      cwe: null,
+      owaspCategory: null,
+      confidence: f.confidence || 'HIGH',
+      remediation: f.optimization || '',
+      complexityEstimate: f.complexityEstimate || null,
+      createdAt: review.createdAt || new Date()
+    }));
+  }
+
+  // 5. Pre-filter telemetry calculation
+  const totalPerformanceIssues = enrichedIssues.length;
+
+  const severityCounts = {
+    CRITICAL: 0,
+    HIGH: 0,
+    MEDIUM: 0,
+    LOW: 0,
+    INFO: 0
+  };
+
+  const sourceCounts = {
+    static: 0,
+    gemini: 0,
+    hybrid: 0
+  };
+
+  const complexityDistribution = {};
+
+  for (const issue of enrichedIssues) {
+    if (severityCounts[issue.severity] !== undefined) {
+      severityCounts[issue.severity]++;
+    }
+    if (sourceCounts[issue.source] !== undefined) {
+      sourceCounts[issue.source]++;
+    }
+    const cEst = issue.complexityEstimate || 'Unspecified';
+    complexityDistribution[cEst] = (complexityDistribution[cEst] || 0) + 1;
+  }
+
+  // 6. Query filtering
+  let filteredIssues = enrichedIssues;
+  if (query.severity) {
+    const targetSeverity = query.severity.toUpperCase();
+    filteredIssues = filteredIssues.filter((issue) => issue.severity === targetSeverity);
+  }
+  if (query.source) {
+    const targetSource = query.source.toLowerCase();
+    filteredIssues = filteredIssues.filter((issue) => issue.source === targetSource);
+  }
+
+  const filteredCount = filteredIssues.length;
+
+  // 7. Deterministic sorting
+  const SEVERITY_SORT_RANK = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1 };
+  const sortMode = query.sort || 'severity_desc';
+
+  filteredIssues.sort((a, b) => {
+    const aRank = SEVERITY_SORT_RANK[a.severity] ?? 0;
+    const bRank = SEVERITY_SORT_RANK[b.severity] ?? 0;
+
+    if (sortMode === 'severity_asc') {
+      const rankDiff = aRank - bRank;
+      if (rankDiff !== 0) return rankDiff;
+      if (a.lineStart !== b.lineStart) return a.lineStart - b.lineStart;
+      return a._id.toString().localeCompare(b._id.toString());
+    }
+
+    if (sortMode === 'line_asc') {
+      if (a.lineStart !== b.lineStart) return a.lineStart - b.lineStart;
+      const rankDiff = bRank - aRank;
+      if (rankDiff !== 0) return rankDiff;
+      return a._id.toString().localeCompare(b._id.toString());
+    }
+
+    if (sortMode === 'line_desc') {
+      if (a.lineStart !== b.lineStart) return b.lineStart - a.lineStart;
+      const rankDiff = bRank - aRank;
+      if (rankDiff !== 0) return rankDiff;
+      return a._id.toString().localeCompare(b._id.toString());
+    }
+
+    // Default: severity_desc
+    const rankDiff = bRank - aRank;
+    if (rankDiff !== 0) return rankDiff;
+    if (a.lineStart !== b.lineStart) return a.lineStart - b.lineStart;
+    return a._id.toString().localeCompare(b._id.toString());
+  });
+
+  return {
+    reviewId: review._id.toString(),
+    title: review.title,
+    language: review.language,
+    performanceScore,
+    performanceGrade,
+    timeComplexity,
+    spaceComplexity,
+    complexityType,
+    confidence: evaluated?.confidence || 'HIGH',
+    hasCriticalBottleneck: severityCounts.CRITICAL > 0,
+    totalPerformanceIssues,
+    filteredCount,
+    severityCounts,
+    sourceCounts,
+    complexityDistribution,
+    suggestedCode: analysis?.suggestedCode || null,
+    refactoringRationale: analysis?.refactoringRationale || null,
+    summary: analysis?.summary || evaluated?.summary || 'Performance evaluation completed.',
+    issues: filteredIssues
+  };
+}
+
+/**
+ * Persists an applied fix to an existing review record while strictly preserving original rawCode.
+ *
+ * @param {string} reviewId - Review ObjectId hex string
+ * @param {string|mongoose.Types.ObjectId} userId - Authenticated user's ID
+ * @param {object} fixData - Fix details (issueId, ruleId, lineStart, lineEnd, previousSnippet, appliedSnippet, updatedCode)
+ * @returns {Promise<{ review: object, appliedFix: object } | null>}
+ */
+export async function applyFixToReview(reviewId, userId, fixData) {
+  if (!mongoose.Types.ObjectId.isValid(reviewId)) {
+    throw new ApiError(400, 'Invalid review ID format', 'INVALID_ID_FORMAT');
+  }
+
+  const safeReviewId = new mongoose.Types.ObjectId(reviewId);
+  const safeUserId = new mongoose.Types.ObjectId(userId);
+
+  const review = await CodeReview.findOne({ _id: safeReviewId, userId: safeUserId });
+  if (!review) {
+    return null;
+  }
+
+  if (fixData.lineStart < 1 || fixData.lineEnd < fixData.lineStart) {
+    throw new ApiError(400, 'Invalid line coordinates for applied fix', 'INVALID_LINE_COORDINATES');
+  }
+
+  const appliedRecord = {
+    issueId: fixData.issueId && mongoose.Types.ObjectId.isValid(fixData.issueId)
+      ? new mongoose.Types.ObjectId(fixData.issueId)
+      : null,
+    ruleId: fixData.ruleId || null,
+    lineStart: fixData.lineStart,
+    lineEnd: fixData.lineEnd,
+    previousSnippet: fixData.previousSnippet || '',
+    appliedSnippet: fixData.appliedSnippet || '',
+    appliedAt: new Date()
+  };
+
+  if (!Array.isArray(review.appliedFixes)) {
+    review.appliedFixes = [];
+  }
+
+  review.appliedFixes.push(appliedRecord);
+  review.currentCode = fixData.updatedCode;
+
+  await review.save();
+
+  return {
+    review: review.toObject ? review.toObject() : review,
+    appliedFix: appliedRecord
+  };
+}
+
+/**
+ * Reverts the most recent applied fix on an existing review while strictly preserving original rawCode.
+ *
+ * @param {string} reviewId - Review ObjectId hex string
+ * @param {string|mongoose.Types.ObjectId} userId - Authenticated user's ID
+ * @param {object} [options={}] - Optional restoredCode string
+ * @returns {Promise<{ review: object, undoneFix: object } | null>}
+ */
+export async function undoFixOnReview(reviewId, userId, options = {}) {
+  if (!mongoose.Types.ObjectId.isValid(reviewId)) {
+    throw new ApiError(400, 'Invalid review ID format', 'INVALID_ID_FORMAT');
+  }
+
+  const safeReviewId = new mongoose.Types.ObjectId(reviewId);
+  const safeUserId = new mongoose.Types.ObjectId(userId);
+
+  const review = await CodeReview.findOne({ _id: safeReviewId, userId: safeUserId });
+  if (!review) {
+    return null;
+  }
+
+  if (!Array.isArray(review.appliedFixes) || review.appliedFixes.length === 0) {
+    throw new ApiError(400, 'No applied fixes to undo on this review', 'NO_FIXES_TO_UNDO');
+  }
+
+  const undoneFix = review.appliedFixes.pop();
+
+  if (typeof options.restoredCode === 'string') {
+    review.currentCode = options.restoredCode;
+  } else if (review.appliedFixes.length === 0) {
+    review.currentCode = null;
+  }
+
+  await review.save();
+
+  return {
+    review: review.toObject ? review.toObject() : review,
+    undoneFix: undoneFix.toObject ? undoneFix.toObject() : undoneFix
+  };
+}
+
 export default {
   escapeRegex,
   gradeForScore,
@@ -676,5 +986,10 @@ export default {
   getUserReviews,
   getReviewById,
   getSecurityReview,
+  getPerformanceReview,
+  applyFixToReview,
+  undoFixOnReview,
   deleteReview
 };
+
+

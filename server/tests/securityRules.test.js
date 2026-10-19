@@ -21,9 +21,9 @@ import {
 
 describe('Phase 9 — Step 1: Static Security Rules Suite', () => {
   describe('1. Structural & Metadata Validation', () => {
-    it('should export exactly 42 security rules across all domains', () => {
-      assert.equal(allSecurityRules.length, 42);
-      assert.equal(securityRulesById.size, 42);
+    it('should export exactly 43 security rules across all domains', () => {
+      assert.equal(allSecurityRules.length, 43);
+      assert.equal(securityRulesById.size, 43);
     });
 
     it('every rule must possess valid ruleId, name, title, category, severity, cwe, owaspCategory, and confidence', () => {
@@ -48,7 +48,7 @@ describe('Phase 9 — Step 1: Static Security Rules Suite', () => {
 
     it('should correctly filter rules by language', () => {
       const pythonRules = getSecurityRulesByLanguage('python');
-      assert.ok(pythonRules.length >= 10);
+      assert.ok(pythonRules.length >= 11);
       assert.ok(pythonRules.every((r) => r.languages.includes('python')));
 
       const jsRules = getSecurityRulesByLanguage('javascript');
@@ -87,6 +87,19 @@ describe('Phase 9 — Step 1: Static Security Rules Suite', () => {
       assert.match(snippet1, new RegExp(rule.regex.source, rule.regex.flags));
       assert.match(snippet2, new RegExp(rule.regex.source, rule.regex.flags));
       assert.match(snippet3, new RegExp(rule.regex.source, rule.regex.flags));
+    });
+
+    it('SEC-PY-SQL-002: detects SQL injection via string concatenation in query variable assignment', () => {
+      const rule = getSecurityRuleById('SEC-PY-SQL-002');
+      assert.ok(rule);
+      assert.equal(rule.cwe, 'CWE-89');
+      assert.equal(rule.severity, 'CRITICAL');
+      assert.equal(rule.confidence, 'HIGH');
+
+      const userSnippet = 'query = "SELECT * FROM users WHERE username = \'" + username + "\' AND password = \'" + password + "\'"';
+      assert.match(userSnippet, new RegExp(rule.regex.source, rule.regex.flags));
+      assert.ok(rule.suggestedSnippet.includes('?'), 'Suggested snippet must use parameterized placeholder ?');
+      assert.ok(rule.remediation.includes('parameterized queries'), 'Remediation must explain parameterized queries');
     });
 
     it('SEC-PY-CMD-001: detects subprocess execution with shell=True in Python', () => {
@@ -361,7 +374,7 @@ describe('Phase 9 — Step 1: Static Security Rules Suite', () => {
   });
 
   describe('4. ReDoS Safety Verification (< 10ms on 50 KB adversarial strings)', () => {
-    it('all 42 regular expressions complete execution within 10ms on adversarial inputs', () => {
+    it('all 43 regular expressions complete execution within 10ms on adversarial inputs', () => {
       // Construct a 50 KB adversarial string with repetitive characters and partial syntax tokens
       const baseChunk = 'const a = "SELECT * FROM users WHERE id = 12345" + \'abc\' + `${x}`;\n';
       const adversarialText = baseChunk.repeat(800); // ~56 KB

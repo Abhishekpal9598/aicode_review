@@ -9,12 +9,18 @@ import {
   FileCode,
   AlertTriangle,
   X,
-  Bot
+  Bot,
+  Undo2
 } from 'lucide-react';
 import LanguageSelector from './LanguageSelector';
 
 export function EditorToolbar({
   language,
+  selectedMode = 'auto',
+  detectedLanguage = null,
+  detectionConfidence = 'HIGH',
+  detectionStatus = 'auto',
+  isManualOverride = false,
   fileName,
   isDirty,
   code,
@@ -25,6 +31,8 @@ export function EditorToolbar({
   onRequestReset,
   onConfirmReset,
   onCancelReset,
+  onUndoFix,
+  undoStackCount = 0,
   onAnalyze,
   isAnalyzing = false,
   isStale = false,
@@ -51,19 +59,57 @@ export function EditorToolbar({
       aria-label="Editor Toolbar"
       className="h-12 bg-surface-secondary border-b border-border-subtle px-3 sm:px-4 flex items-center justify-between gap-2 overflow-x-auto select-none"
     >
-      {/* Left section: Language Selector & File Name display */}
-      <div className="flex items-center gap-3 shrink-0">
+      {/* Left section: Language Selector, Status Badge & File Name */}
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <LanguageSelector
           currentLanguage={language}
+          selectedMode={selectedMode}
+          detectedLanguage={detectedLanguage}
+          detectionConfidence={detectionConfidence}
+          detectionStatus={detectionStatus}
           onLanguageChange={onLanguageChange}
         />
+
+        {/* Small Status Indicator Badge */}
+        {detectionStatus === 'auto' && (
+          <span
+            data-testid="language-status-badge"
+            className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 select-none"
+            title="Programming language automatically detected from syntax or file extension"
+          >
+            <Sparkles className="w-3 h-3 text-emerald-400 shrink-0" />
+            <span>Auto Detected</span>
+          </span>
+        )}
+
+        {detectionStatus === 'manual' && (
+          <span
+            data-testid="language-status-badge"
+            className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 select-none"
+            title="Manually selected language overrides automatic detection"
+          >
+            <Check className="w-3 h-3 text-indigo-400 shrink-0" />
+            <span>Manually Selected</span>
+          </span>
+        )}
+
+        {detectionStatus === 'uncertain' && (
+          <span
+            data-testid="language-status-badge"
+            className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 border border-amber-500/30 text-amber-400 select-none"
+            title="Language detection is uncertain. Click the selector to verify or select manually."
+          >
+            <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
+            <span>Detection Uncertain</span>
+          </span>
+        )}
 
         <div
           className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-primary border border-border-subtle/80 text-xs font-mono text-text-primary"
           title={`Active file: ${fileName}`}
         >
           <FileCode className="w-3.5 h-3.5 text-brand-primary shrink-0" />
-          <span className="truncate max-w-[140px] sm:max-w-[200px]">{fileName}</span>
+          <span className="truncate max-w-[120px] sm:max-w-[180px]">{fileName}</span>
           {isDirty && (
             <span
               className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"
@@ -134,6 +180,36 @@ export function EditorToolbar({
         >
           <RotateCcw className="w-3.5 h-3.5 text-text-muted" />
           <span className="hidden sm:inline">Reset</span>
+        </button>
+
+        {/* Undo Fix Button (Phase 11) */}
+        <button
+          type="button"
+          onClick={onUndoFix}
+          disabled={!undoStackCount || undoStackCount === 0}
+          data-testid="undo-fix-toolbar-button"
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors ${
+            undoStackCount > 0
+              ? 'bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 cursor-pointer shadow-sm shadow-amber-500/10'
+              : 'bg-surface-primary border border-border-subtle text-text-muted cursor-not-allowed opacity-50'
+          }`}
+          title={
+            undoStackCount > 0
+              ? `Undo last applied fix (${undoStackCount} in stack)`
+              : 'No applied fixes to undo'
+          }
+          aria-label="Undo applied fix"
+        >
+          <Undo2 className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Undo Fix</span>
+          {undoStackCount > 0 && (
+            <span
+              data-testid="undo-count-badge"
+              className="px-1.5 py-0.2 rounded-full bg-amber-500/30 text-[10px] font-mono font-bold text-amber-200"
+            >
+              {undoStackCount}
+            </span>
+          )}
         </button>
 
         {/* Analyze Code Trigger Button (Phase 7 Static Engine) */}

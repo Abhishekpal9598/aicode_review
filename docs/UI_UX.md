@@ -129,8 +129,14 @@ The application adopts a **persistent sidebar + sticky contextual toolbar + resp
 ### 4.3 Code Review Workspace
 The heart of the application, engineered for maximum ergonomics:
 - **Top Command Strip (Toolbar)**:
-  - **Language Select Dropdown**: Shows supported languages (`C`, `C++`, `Java`, `Python`, `JavaScript`, `TypeScript`) with corresponding color-coded file icons.
-  - **Upload Source File Trigger**: `UploadCloud` icon button opening native file dialog or accepting direct drag-and-drop.
+  - **Language Select Dropdown & Smart Detection**:
+    - **Auto Detect (Default)**: Automatically identifies language from code syntax or file extension. Displays detected language pill (e.g., `Auto: Python`).
+    - **Manual Selection**: Direct selection from 6 supported languages (`Python`, `JavaScript`, `TypeScript`, `Java`, `C`, `C++`), freezing selection against code changes.
+    - **Dynamic Status Indicator Badges**:
+      - `Auto Detected: [Language]` (Blue badge with `Sparkles` icon): Active when language is auto-detected with high or medium confidence.
+      - `Manually Selected: [Language]` (Indigo badge with `Lock` icon): Active when developer manually selects a language.
+      - `Detection Uncertain` (Amber badge with `AlertTriangle` icon): Active when code is ambiguous; displays a banner guiding user to confirm or choose a language manually.
+  - **Upload Source File Trigger**: `UploadCloud` icon button opening native file dialog or accepting direct drag-and-drop; automatically resolves language from file extension.
   - **Buffer Telemetry**: Displays Line count, Character count, and File Size in real time.
   - **Clear / Reset Buffer Button**: Danger-styled outline button with confirmation popover.
   - **Analyze Code (Primary CTA)**: High-visibility Indigo button with keyboard shortcut tooltip (`Ctrl + Enter` / `Cmd + Enter`).

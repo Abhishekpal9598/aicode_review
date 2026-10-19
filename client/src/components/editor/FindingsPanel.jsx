@@ -83,6 +83,9 @@ function FindingsPanelBase({
   onClose,
   activeFindingId,
   onRetryReview,
+  onRequestApplyFix,
+  appliedFixIds = [],
+  onUndoFix,
   navigate
 }) {
   const [activeTab, setActiveTab] = useState('findings'); // 'findings' | 'refactoring'
@@ -106,6 +109,13 @@ function FindingsPanelBase({
     if (navigate && hasValidPersistedId) {
       e.preventDefault();
       navigate(`/security?reviewId=${encodeURIComponent(persistedReviewId)}`);
+    }
+  };
+
+  const handlePerformanceNav = (e) => {
+    if (navigate && hasValidPersistedId) {
+      e.preventDefault();
+      navigate(`/performance?reviewId=${encodeURIComponent(persistedReviewId)}`);
     }
   };
 
@@ -159,7 +169,11 @@ function FindingsPanelBase({
       columnStart: issue.columnStart || 1,
       columnEnd: issue.columnEnd || 1,
       originalSnippet: issue.originalSnippet || '',
-      suggestedSnippet: issue.suggestedSnippet || ''
+      suggestedSnippet: issue.suggestedSnippet || '',
+      cwe: issue.cwe || null,
+      owaspCategory: issue.owaspCategory || null,
+      confidence: issue.confidence || null,
+      remediation: issue.remediation || ''
     }));
 
     if (analysis.metrics?.issueCounts) {
@@ -182,9 +196,14 @@ function FindingsPanelBase({
     reviewMode = 'static';
     totalLines = metrics.totalLines || 0;
     executionTimeMs = metrics.executionTimeMs || 1;
-    rawFindings = (analysisResult.findings || []).map((f) => ({
+    rawFindings = (analysisResult.findings || []).map((f, idx) => ({
       ...f,
-      source: 'static'
+      id: f.id || `${f.ruleId || 'finding'}-${f.lineStart || idx}`,
+      source: 'static',
+      cwe: f.cwe || null,
+      owaspCategory: f.owaspCategory || null,
+      confidence: f.confidence || null,
+      remediation: f.remediation || ''
     }));
     severityCounts = metrics.severityCounts || {
       critical: 0,
@@ -308,16 +327,29 @@ function FindingsPanelBase({
 
         <div className="flex items-center gap-2">
           {hasValidPersistedId && (
-            <a
-              href={`/security?reviewId=${encodeURIComponent(persistedReviewId)}`}
-              onClick={handleSecurityNav}
-              data-testid="view-security-dashboard-btn"
-              title="Open dedicated Security Dashboard for this review"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-xs text-rose-300 font-medium transition-colors cursor-pointer"
-            >
-              <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-              <span>Security</span>
-            </a>
+            <>
+              <a
+                href={`/security?reviewId=${encodeURIComponent(persistedReviewId)}`}
+                onClick={handleSecurityNav}
+                data-testid="view-security-dashboard-btn"
+                title="Open dedicated Security Dashboard for this review"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-xs text-rose-300 font-medium transition-colors cursor-pointer"
+              >
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                <span>Security</span>
+              </a>
+
+              <a
+                href={`/performance?reviewId=${encodeURIComponent(persistedReviewId)}`}
+                onClick={handlePerformanceNav}
+                data-testid="view-performance-dashboard-btn"
+                title="Open dedicated Performance & Big-O Dashboard for this review"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-xs text-sky-300 font-medium transition-colors cursor-pointer"
+              >
+                <Cpu className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span>Performance</span>
+              </a>
+            </>
           )}
           {onClose && (
             <button
@@ -724,7 +756,37 @@ function FindingsPanelBase({
                           </span>
                         )}
 
-                        <span className="text-[10px] text-text-secondary">
+                        {/* CWE Badge */}
+                        {finding.cwe && (
+                          <span
+                            data-testid="badge-cwe"
+                            className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30"
+                          >
+                            {finding.cwe}
+                          </span>
+                        )}
+
+                        {/* OWASP Category Badge */}
+                        {finding.owaspCategory && (
+                          <span
+                            data-testid="badge-owasp"
+                            className="font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30"
+                          >
+                            {finding.owaspCategory}
+                          </span>
+                        )}
+
+                        {/* Confidence Badge */}
+                        {finding.confidence && (
+                          <span
+                            data-testid="badge-confidence"
+                            className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-surface-tertiary text-text-secondary border border-border-subtle"
+                          >
+                            {finding.confidence} Confidence
+                          </span>
+                        )}
+
+                        <span className="text-[10px] font-mono text-brand-primary font-medium">
                           Line {finding.lineStart}:{finding.columnStart}
                         </span>
                       </div>
@@ -742,42 +804,107 @@ function FindingsPanelBase({
                       {finding.explanation}
                     </p>
 
-                    {/* Matched Original Snippet */}
+                    {/* Matched Original Vulnerable Snippet */}
                     {finding.originalSnippet && (
-                      <div className="mt-2 p-1.5 rounded bg-canvas border border-border-subtle/60 font-mono text-[11px] text-rose-300 overflow-x-auto">
-                        <code>{finding.originalSnippet}</code>
+                      <div className="mt-2 p-2 rounded bg-canvas border border-rose-500/30 text-rose-300">
+                        <div className="text-[9px] uppercase tracking-wider text-rose-400 font-sans font-bold mb-1">
+                          Vulnerable Code (Line {finding.lineStart})
+                        </div>
+                        <pre className="font-mono text-[11px] overflow-x-auto whitespace-pre-wrap">
+                          <code>{finding.originalSnippet}</code>
+                        </pre>
                       </div>
                     )}
 
-                    {/* Suggested Fix Action Strip */}
+                    {/* Suggested Fix Code Block */}
                     {finding.suggestedSnippet && (
-                      <div className="mt-2.5 pt-2 border-t border-border-subtle/60 flex items-center justify-between gap-2">
-                        <span className="text-[10px] text-emerald-400 font-medium truncate max-w-[200px]">
-                          Fix: {finding.suggestedSnippet.split('\n')[0]}
-                        </span>
+                      <div className="mt-2.5 p-2 rounded bg-surface-secondary border border-emerald-500/30">
+                        <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                          <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold font-sans">
+                            Corrected Code Suggestion
+                          </span>
 
-                        <button
-                          type="button"
-                          onClick={(e) => handleCopyFix(e, finding)}
-                          aria-label="Copy suggested fix"
-                          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer ${
-                            copiedId === finding.id
-                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                              : 'bg-surface-secondary hover:bg-surface-tertiary text-text-secondary hover:text-text-primary border border-border-subtle'
-                          }`}
-                        >
-                          {copiedId === finding.id ? (
-                            <>
-                              <Check className="w-3 h-3 text-emerald-400" />
-                              <span>Copied!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3 h-3 text-text-muted" />
-                              <span>Copy Fix</span>
-                            </>
-                          )}
-                        </button>
+                          <div className="flex items-center gap-1.5">
+                            {/* Copy Fix Button */}
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopyFix(e, finding)}
+                              aria-label="Copy suggested fix"
+                              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer ${
+                                copiedId === finding.id
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                  : 'bg-surface-primary hover:bg-surface-tertiary text-text-secondary hover:text-text-primary border border-border-subtle'
+                              }`}
+                            >
+                              {copiedId === finding.id ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-400" />
+                                  <span>Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3 text-text-muted" />
+                                  <span>Copy Fix</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* Phase 11: Apply Fix Button or Applied Badge & Undo */}
+                            {appliedFixIds.includes(finding.id) ? (
+                              <div className="flex items-center gap-1">
+                                <span
+                                  data-testid={`badge-applied-${finding.id}`}
+                                  className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/40"
+                                >
+                                  <Check className="w-2.5 h-2.5" />
+                                  <span>Applied</span>
+                                </span>
+                                {onUndoFix && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onUndoFix(finding.id);
+                                    }}
+                                    data-testid={`undo-fix-${finding.id}`}
+                                    aria-label="Undo applied fix"
+                                    className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-colors cursor-pointer"
+                                  >
+                                    Undo
+                                  </button>
+                                )}
+                              </div>
+                            ) : onRequestApplyFix ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onRequestApplyFix(finding);
+                                }}
+                                data-testid={`apply-fix-btn-${finding.id}`}
+                                aria-label="Apply suggested fix to editor"
+                                className="flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-brand-primary hover:bg-brand-hover text-white transition-colors cursor-pointer shadow-sm shadow-brand-primary/20"
+                              >
+                                <Sparkles className="w-3 h-3" />
+                                <span>Apply Fix</span>
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <pre className="p-2 rounded bg-canvas font-mono text-[11px] text-emerald-300 border border-border-subtle/50 overflow-x-auto whitespace-pre-wrap">
+                          <code>{finding.suggestedSnippet}</code>
+                        </pre>
+                      </div>
+                    )}
+
+                    {/* Explanation of Why the Correction Works */}
+                    {finding.remediation && (
+                      <div className="mt-2 p-2 rounded bg-indigo-500/10 border border-indigo-500/20 text-[11px] text-indigo-200 leading-relaxed">
+                        <strong className="text-indigo-300 font-semibold block mb-0.5">
+                          Why this correction works:
+                        </strong>
+                        {finding.remediation}
                       </div>
                     )}
                   </div>

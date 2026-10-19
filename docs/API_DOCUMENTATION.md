@@ -219,6 +219,7 @@ Authenticated routes require either:
 - **Access**: Authenticated
 - **Rate Limit**: 10 calls / min
 - **Description**: Submits code string for hybrid static and Gemini AI analysis.
+- **Language Enum**: Validated via strict Zod enum (`"python" | "javascript" | "typescript" | "java" | "c" | "cpp"`). In client Auto Detect mode, the client's deterministic heuristic engine resolves the effective language prior to submission.
 
 #### Request Body
 ```json

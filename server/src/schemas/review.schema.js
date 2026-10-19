@@ -140,11 +140,138 @@ export const getSecurityReviewSchema = {
     .strict()
 };
 
+/**
+ * Request validation schema for GET /api/v1/reviews/:id/performance
+ */
+export const getPerformanceReviewSchema = {
+  params: z
+    .object({
+      id: z
+        .string({ required_error: 'Review ID is required' })
+        .regex(OBJECT_ID_REGEX, { message: 'Invalid review ID format' })
+    })
+    .strict(),
+  query: z
+    .object({
+      severity: z
+        .enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'])
+        .optional(),
+      source: z
+        .enum(['static', 'gemini', 'hybrid'])
+        .optional(),
+      sort: z
+        .enum(['severity_desc', 'severity_asc', 'line_asc', 'line_desc'])
+        .default('severity_desc')
+    })
+    .strict()
+};
+
+/**
+ * Request validation schema for POST /api/v1/reviews/:id/apply-fix
+ */
+export const applyFixSchema = {
+  params: z
+    .object({
+      id: z
+        .string({ required_error: 'Review ID is required' })
+        .regex(OBJECT_ID_REGEX, { message: 'Invalid review ID format' })
+    })
+    .strict(),
+  body: z
+    .object({
+      issueId: z
+        .string()
+        .regex(OBJECT_ID_REGEX, { message: 'Invalid issue ID format' })
+        .optional()
+        .nullable(),
+      ruleId: z
+        .string()
+        .trim()
+        .max(60, 'ruleId cannot exceed 60 characters')
+        .optional()
+        .nullable(),
+      lineStart: z
+        .number({ required_error: 'lineStart is required' })
+        .int('lineStart must be an integer')
+        .min(1, 'lineStart must be at least 1'),
+      lineEnd: z
+        .number({ required_error: 'lineEnd is required' })
+        .int('lineEnd must be an integer')
+        .min(1, 'lineEnd must be at least 1'),
+      previousSnippet: z
+        .string()
+        .max(2000, 'previousSnippet cannot exceed 2000 characters')
+        .optional()
+        .default(''),
+      appliedSnippet: z
+        .string({ required_error: 'appliedSnippet is required' })
+        .max(2000, 'appliedSnippet cannot exceed 2000 characters')
+        .refine((v) => v.trim().length > 0, 'appliedSnippet cannot be empty'),
+      updatedCode: z
+        .string({ required_error: 'updatedCode is required' })
+        .max(1000000, 'Source code exceeds maximum allowed size (1 MB)')
+    })
+    .refine((data) => data.lineEnd >= data.lineStart, {
+      message: 'lineEnd cannot be less than lineStart',
+      path: ['lineEnd']
+    })
+};
+
+/**
+ * Request validation schema for POST /api/v1/reviews/:id/undo-fix
+ */
+export const undoFixSchema = {
+  params: z
+    .object({
+      id: z
+        .string({ required_error: 'Review ID is required' })
+        .regex(OBJECT_ID_REGEX, { message: 'Invalid review ID format' })
+    })
+    .strict(),
+  body: z
+    .object({
+      restoredCode: z
+        .string()
+        .max(1000000, 'Source code exceeds maximum allowed size (1 MB)')
+        .optional()
+    })
+    .optional()
+    .default({})
+};
+
+/**
+ * Request validation schema for GET /api/v1/reviews/:id/export
+ */
+export const exportReviewSchema = {
+  params: z
+    .object({
+      id: z
+        .string({ required_error: 'Review ID is required' })
+        .regex(OBJECT_ID_REGEX, { message: 'Invalid review ID format' })
+    })
+    .strict(),
+  query: z
+    .object({
+      format: z
+        .enum(['json', 'markdown'], {
+          errorMap: () => ({ message: "Export format must be either 'json' or 'markdown'" })
+        })
+        .default('json')
+    })
+    .strict()
+};
+
 export default {
   createReviewSchema,
   listReviewsSchema,
   getReviewByIdSchema,
   deleteReviewSchema,
-  getSecurityReviewSchema
+  getSecurityReviewSchema,
+  getPerformanceReviewSchema,
+  applyFixSchema,
+  undoFixSchema,
+  exportReviewSchema
 };
+
+
 

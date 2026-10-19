@@ -51,10 +51,10 @@ export const authenticate = asyncHandler(async (req, res, next) => {
     }
   }
 
-  // 4. Verify JWT signature & expiration
+  // 4. Verify JWT signature & expiration with strict HS256 algorithm restriction
   let decoded;
   try {
-    decoded = jwt.verify(token, env.JWT_SECRET);
+    decoded = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] });
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
       throw ApiError.unauthorized('Authentication token has expired.', 'AUTH_TOKEN_EXPIRED');
@@ -82,6 +82,16 @@ export const authenticate = asyncHandler(async (req, res, next) => {
     throw ApiError.unauthorized(
       'The user belonging to this token no longer exists.',
       'USER_NOT_FOUND'
+    );
+  }
+
+  // 7b. Server-side token invalidation check via tokenVersion strategy
+  const currentTokenVersion = user.tokenVersion ?? 0;
+  const tokenVersionInPayload = decoded.tokenVersion ?? 0;
+  if (tokenVersionInPayload !== currentTokenVersion) {
+    throw ApiError.unauthorized(
+      'Authentication token has been invalidated. Please log in again.',
+      'AUTH_TOKEN_INVALIDATED'
     );
   }
 

@@ -58,9 +58,13 @@ The platform is a decoupled client-server web application. The frontend runs as 
 
 ### Module 2: Code Ingestion & Editor Workspace
 - **FR-ING-01 (Monaco Integration)**: System shall embed Monaco Editor supporting syntax highlighting, line numbers, code folding, and minimap.
-- **FR-ING-02 (Language Support)**: System shall support language selection for `C`, `C++`, `Java`, `Python`, `JavaScript`, and `TypeScript`.
+- **FR-ING-02 (Language Support & Auto-Detection)**:
+  - System shall support `Python`, `JavaScript`, `TypeScript`, `Java`, `C`, and `C++`.
+  - System shall provide Auto Detect as the default mode, dynamically identifying the language via deterministic syntax scoring without remote AI calls.
+  - System shall allow developers to manually select and lock any supported language; manual selections must strictly override auto-detection and remain fixed when code changes.
+  - System shall provide visual status indicators (`Auto Detected`, `Manually Selected`, `Detection Uncertain`).
 - **FR-ING-03 (Direct Input)**: System shall allow developers to paste or type up to 2,500 lines of code or 1,000,000 bytes.
-- **FR-ING-04 (File Upload)**: System shall allow users to upload single source files with extensions `.c`, `.cpp`, `.java`, `.py`, `.js`, `.ts` up to 1 MB in size.
+- **FR-ING-04 (File Upload & Auto-Detection)**: System shall allow users to upload single source files with extensions (`.c`, `.cpp`, `.cc`, `.cxx`, `.java`, `.py`, `.js`, `.jsx`, `.ts`, `.tsx`, `.h`, `.hpp`) up to 1 MB in size, automatically setting the editor language and detecting ambiguous header extensions.
 - **FR-ING-05 (Realtime Telemetry)**: Editor workspace shall display line count, character count, and file size in real time.
 
 ### Module 3: Dual-Layer Code Analysis

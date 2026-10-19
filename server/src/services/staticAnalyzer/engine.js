@@ -15,6 +15,7 @@ import { LineMapper } from './utils/lineMapper.js';
 import { deduplicateFindings } from './utils/deduplicator.js';
 import { calculateScore } from './scoring.js';
 import { getRulesForLanguage } from './rules/index.js';
+import { detectLanguageMismatch } from './utils/detector.js';
 
 /**
  * Analyzes source code deterministically across supported languages.
@@ -94,13 +95,38 @@ export function analyze(code, language, options = {}) {
     }
   }
 
-  // 6. Strict same-rule deduplication & deterministic sorting
+  // 6. Language signature validation (prevent silent cross-language false clean Grade A)
+  const mismatchCheck = detectLanguageMismatch(safeCode, safeLang);
+  if (mismatchCheck.isMismatch) {
+    const detected = mismatchCheck.detectedLanguage;
+    const evidenceStr = mismatchCheck.evidence.slice(0, 3).join(', ');
+    rawFindings.push({
+      ruleId: 'LANG-MISMATCH-001',
+      title: 'Programming Language Mismatch Detected',
+      category: 'RISK',
+      severity: 'HIGH',
+      lineStart: 1,
+      lineEnd: 1,
+      columnStart: 1,
+      columnEnd: 1,
+      originalSnippet: lines[0] ? lines[0].slice(0, 100) : '',
+      suggestedSnippet: `// Switch selected language to ${detected ? detected.toUpperCase() : 'correct language'}`,
+      explanation: `The submitted code exhibits syntax patterns typical of ${detected ? detected.toUpperCase() : 'another language'} (e.g. ${evidenceStr}), but analysis was requested for "${safeLang}". Static analysis rules for ${safeLang.toUpperCase()} cannot parse or evaluate ${detected ? detected.toUpperCase() : 'this'} code, resulting in invalid analysis.`,
+      remediation: `Change the selected language to '${detected ? detected.toUpperCase() : 'the matching language'}' to run the appropriate static analysis rules.`,
+      source: 'static',
+      cwe: 'CWE-398',
+      owaspCategory: 'A04:2021-Insecure Design',
+      confidence: 'HIGH'
+    });
+  }
+
+  // 7. Strict same-rule deduplication & deterministic sorting
   const deduplicatedFindings = deduplicateFindings(rawFindings);
 
-  // 7. Deterministic mathematical scoring
+  // 8. Deterministic mathematical scoring
   const scoring = calculateScore(deduplicatedFindings);
 
-  // 8. Derived metric aggregation
+  // 9. Derived metric aggregation
   const securityFindings = deduplicatedFindings.filter((f) => f.category === 'SEC').length;
   const riskFindings = deduplicatedFindings.filter((f) => f.category === 'RISK').length;
   const qualityFindings = deduplicatedFindings.filter((f) => f.category === 'QUAL').length;
@@ -132,6 +158,13 @@ export function analyze(code, language, options = {}) {
     transient: true,
     language: safeLang,
     fileName,
+    languageMismatch: mismatchCheck.isMismatch
+      ? {
+          detectedLanguage: mismatchCheck.detectedLanguage,
+          declaredLanguage: safeLang,
+          evidence: mismatchCheck.evidence
+        }
+      : null,
     metrics,
     scoring,
     findings: deduplicatedFindings

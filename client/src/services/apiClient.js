@@ -239,8 +239,69 @@ class ApiClient {
 
     return this.get(endpoint);
   }
+
+  /**
+   * Phase 10: Dedicated Performance & Big-O Analysis Retrieval
+   * Retrieves algorithmic performance telemetry, Big-O metrics, and bottleneck findings.
+   * GET /api/v1/reviews/:id/performance
+   *
+   * @param {string} id - Review ObjectId (24-hex characters)
+   * @param {object} [params={}] - Optional query filters
+   * @param {string} [params.severity] - 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO'
+   * @param {string} [params.source] - 'static' | 'gemini' | 'hybrid'
+   * @param {string} [params.sort] - 'severity_desc' | 'severity_asc' | 'line_asc' | 'line_desc'
+   * @returns {Promise<object>} ApiResponse with performance review payload
+   */
+  async getPerformanceReview(id, params = {}) {
+    const query = new URLSearchParams();
+    if (params.severity) query.set('severity', params.severity);
+    if (params.source) query.set('source', params.source);
+    if (params.sort) query.set('sort', params.sort);
+
+    const queryString = query.toString();
+    const endpoint = queryString
+      ? `/v1/reviews/${id}/performance?${queryString}`
+      : `/v1/reviews/${id}/performance`;
+
+    return this.get(endpoint);
+  }
+
+  /**
+   * Phase 11: Apply Fix to Review
+   * Persists an applied fix to an existing review record while preserving rawCode.
+   * POST /api/v1/reviews/:id/apply-fix
+   *
+   * @param {string} id - Review ObjectId
+   * @param {object} fixData - { issueId?, ruleId?, lineStart, lineEnd, previousSnippet?, appliedSnippet, updatedCode }
+   * @returns {Promise<object>} ApiResponse
+   */
+  async applyFix(id, fixData) {
+    return this.post(`/v1/reviews/${id}/apply-fix`, fixData);
+  }
+
+  /**
+   * Phase 11: Undo Fix on Review
+   * Reverts the most recent applied fix on a review.
+   * POST /api/v1/reviews/:id/undo-fix
+   *
+   * @param {string} id - Review ObjectId
+   * @param {object} [data={}] - Optional restoredCode
+   * @returns {Promise<object>} ApiResponse
+   */
+  /**
+   * Phase 13: Export Review Audit Report
+   * GET /api/v1/reviews/:id/export?format=json|markdown
+   *
+   * @param {string} id - Review ObjectId
+   * @param {'json' | 'markdown'} [format='json'] - Desired format
+   * @returns {Promise<object|string>} JSON export object or Markdown text string
+   */
+  async exportReview(id, format = 'json') {
+    return this.get(`/v1/reviews/${id}/export?format=${format}`);
+  }
 }
 
 export const apiClient = new ApiClient();
 export default apiClient;
+
 

@@ -22,7 +22,7 @@ export const staticAnalysisSchema = {
     ),
     fileName: z.string().trim().max(255, 'Filename cannot exceed 255 characters').optional(),
     title: z.string().trim().max(200, 'Title cannot exceed 200 characters').optional()
-  })
+  }).strict()
 };
 
 export default {

@@ -141,6 +141,34 @@ const reviewIssueSchema = new mongoose.Schema(
         values: ['static', 'gemini', 'hybrid'],
         message: 'Source must be static, gemini, or hybrid'
       }
+    },
+    cwe: {
+      type: String,
+      default: null,
+      maxlength: [30, 'cwe cannot exceed 30 characters']
+    },
+    owaspCategory: {
+      type: String,
+      default: null,
+      maxlength: [60, 'owaspCategory cannot exceed 60 characters']
+    },
+    confidence: {
+      type: String,
+      default: null,
+      enum: {
+        values: ['HIGH', 'MEDIUM', 'LOW', null],
+        message: 'confidence must be HIGH, MEDIUM, LOW, or null'
+      }
+    },
+    remediation: {
+      type: String,
+      default: '',
+      maxlength: [2000, 'remediation cannot exceed 2000 characters']
+    },
+    complexityEstimate: {
+      type: String,
+      default: null,
+      maxlength: [50, 'complexityEstimate cannot exceed 50 characters']
     }
   },
   {

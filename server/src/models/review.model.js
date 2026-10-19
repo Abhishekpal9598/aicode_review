@@ -74,7 +74,50 @@ const codeReviewSchema = new mongoose.Schema(
     errorMessage: {
       type: String,
       default: null
-    }
+    },
+    currentCode: {
+      type: String,
+      maxlength: [1000000, 'Current code exceeds maximum allowed size (1 MB)'],
+      default: null
+    },
+    appliedFixes: [
+      {
+        issueId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'ReviewIssue',
+          default: null
+        },
+        ruleId: {
+          type: String,
+          default: null,
+          maxlength: [60, 'ruleId cannot exceed 60 characters']
+        },
+        lineStart: {
+          type: Number,
+          required: [true, 'lineStart is required for applied fix'],
+          min: [1, 'lineStart must be at least 1']
+        },
+        lineEnd: {
+          type: Number,
+          required: [true, 'lineEnd is required for applied fix'],
+          min: [1, 'lineEnd must be at least 1']
+        },
+        previousSnippet: {
+          type: String,
+          default: '',
+          maxlength: [2000, 'previousSnippet cannot exceed 2000 characters']
+        },
+        appliedSnippet: {
+          type: String,
+          default: '',
+          maxlength: [2000, 'appliedSnippet cannot exceed 2000 characters']
+        },
+        appliedAt: {
+          type: Date,
+          default: Date.now
+        }
+      }
+    ]
   },
   {
     timestamps: true

@@ -380,11 +380,10 @@ describe('Phase 8 — Step 7: Review API Endpoints & Orchestration', () => {
       // Honest nulls: zero fabricated AI scores
       assert.equal(data.analysis.metrics.bugScore, null);
       assert.equal(data.analysis.metrics.securityScore, null);
-      assert.equal(data.analysis.metrics.performanceScore, null);
       assert.equal(data.analysis.metrics.maintainabilityScore, null);
       assert.equal(data.analysis.metrics.aiCompositeScore, null);
-      assert.equal(data.analysis.timeComplexity, null);
-      assert.equal(data.analysis.spaceComplexity, null);
+      assert.equal(typeof data.analysis.metrics.performanceScore, 'number', 'Deterministic performance score evaluated');
+      assert.equal(typeof data.analysis.timeComplexity, 'string', 'Deterministic time complexity evaluated');
       assert.equal(data.analysis.suggestedCode, null);
       assert.equal(data.analysis.refactoringRationale, null);
       assert.match(data.analysis.summary, /AI semantic analysis was unavailable/i);

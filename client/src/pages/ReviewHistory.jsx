@@ -18,7 +18,9 @@ import {
   Clock,
   RefreshCw,
   AlertCircle,
-  ShieldAlert
+  ShieldAlert,
+  Cpu,
+  GitCompare
 } from 'lucide-react';
 import apiClient from '../services/apiClient';
 
@@ -351,6 +353,14 @@ export function ReviewHistory() {
                           <span className="text-[10px] text-text-muted font-mono truncate max-w-[220px]">
                             {review.filename || 'snippet'}
                           </span>
+                          {review.appliedFixes && review.appliedFixes.length > 0 && (
+                            <span
+                              data-testid={`applied-fixes-badge-${review._id}`}
+                              className="inline-flex items-center gap-1 text-[9px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.2 rounded mt-0.5 w-fit font-sans"
+                            >
+                              {review.appliedFixes.length} fix{review.appliedFixes.length > 1 ? 'es' : ''} applied
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -425,6 +435,28 @@ export function ReviewHistory() {
                           >
                             <ShieldAlert className="w-3 h-3 text-rose-400" />
                             <span>Security</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/performance?reviewId=${review._id}`)}
+                            data-testid={`view-performance-${review._id}`}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface-primary hover:bg-sky-500/10 border border-border-subtle hover:border-sky-500/30 text-xs text-sky-400 hover:text-sky-300 font-medium transition-colors cursor-pointer"
+                            title="View Performance Analysis for this review"
+                          >
+                            <Cpu className="w-3 h-3 text-sky-400" />
+                            <span>Performance</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/code-comparison?reviewId=${review._id}`)}
+                            data-testid={`view-diff-${review._id}`}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface-primary hover:bg-indigo-500/10 border border-border-subtle hover:border-indigo-500/30 text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors cursor-pointer"
+                            title="View Side-by-Side Diff Comparison for this review"
+                          >
+                            <GitCompare className="w-3 h-3 text-indigo-400" />
+                            <span>Diff</span>
                           </button>
 
                           <button

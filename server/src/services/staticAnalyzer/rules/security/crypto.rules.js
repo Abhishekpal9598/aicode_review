@@ -39,9 +39,11 @@ export const cryptoRules = [
     scanRaw: false,
     regex: /MessageDigest\.getInstance\s*\(\s*["'](?:MD5|SHA-?1)["']\)/gi,
     explanation:
-      'MD5 and SHA-1 suffer from practical collision vulnerabilities and must not be used in digital signatures or security verification.',
-    suggestedSnippet: 'MessageDigest md = MessageDigest.getInstance("SHA-256");',
-    remediation: 'Use SHA-256 or SHA-512 for cryptographic integrity, or bcrypt/Argon2 for passwords.'
+      'MD5 and SHA-1 suffer from practical collision vulnerabilities. Furthermore, fast general-purpose hashes like plain SHA-256 or MD5 must NEVER be used for passwords due to GPU brute-force feasibility.',
+    suggestedSnippet:
+      '// For passwords, use BCrypt or Argon2:\nString hashed = org.mindrot.jbcrypt.BCrypt.hashpw(password, org.mindrot.jbcrypt.BCrypt.gensalt(12));\n// For non-password data integrity:\nMessageDigest md = MessageDigest.getInstance("SHA-256");',
+    remediation:
+      'For password hashing, always use adaptive algorithms (bcrypt, Argon2, or scrypt) - never plain SHA-256. For data integrity verification (non-passwords), use SHA-256 or SHA-512.'
   },
   {
     ruleId: 'SEC-PY-CRY-001',
@@ -56,9 +58,11 @@ export const cryptoRules = [
     scanRaw: false,
     regex: /hashlib\s*\.\s*(?:md5|sha1)\s*\(/gi,
     explanation:
-      'MD5 and SHA-1 have known collision vulnerabilities. Do not use them for password storage, security tokens, or integrity proofs.',
-    suggestedSnippet: 'hashlib.sha256(data).hexdigest()',
-    remediation: 'Use hashlib.sha256() for cryptographic hashing or bcrypt/hashlib.scrypt() for credential hashing.'
+      'MD5 and SHA-1 have known collision vulnerabilities. Furthermore, fast general-purpose hashes like plain SHA-256 or MD5 must NEVER be used for password hashing, as GPUs can compute billions of hashes per second.',
+    suggestedSnippet:
+      '# For passwords, use adaptive salted hashing:\nimport bcrypt\nhashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12))\n# For non-password file/data integrity only:\n# import hashlib; digest = hashlib.sha256(data).hexdigest()',
+    remediation:
+      'For password storage, always use slow adaptive hashing algorithms with salt (bcrypt, Argon2, or hashlib.scrypt) - never plain SHA-256. For non-password data integrity, use hashlib.sha256().'
   },
   {
     ruleId: 'SEC-JS-CRY-001',
@@ -73,9 +77,11 @@ export const cryptoRules = [
     scanRaw: false,
     regex: /crypto\s*\.\s*createHash\s*\(\s*["'](?:md5|sha1)["']\)/gi,
     explanation:
-      'MD5 and SHA-1 are cryptographically broken algorithms susceptible to hash collision attacks.',
-    suggestedSnippet: 'crypto.createHash("sha256").update(data).digest("hex")',
-    remediation: 'Use SHA-256 or SHA-512 for digest calculation, and bcrypt/Argon2 for password verification.'
+      'MD5 and SHA-1 are cryptographically broken algorithms susceptible to hash collision attacks. Furthermore, plain fast hashes must never be used for password storage.',
+    suggestedSnippet:
+      '// For passwords, use adaptive hashing:\nconst bcrypt = require("bcrypt");\nconst hash = await bcrypt.hash(password, 12);\n// For non-password data integrity:\n// const hash = crypto.createHash("sha256").update(data).digest("hex");',
+    remediation:
+      'For passwords, always use bcrypt, Argon2, or scrypt (never plain SHA-256). For non-password data integrity digests, use SHA-256 or SHA-512.'
   },
   {
     ruleId: 'SEC-PY-RNG-001',

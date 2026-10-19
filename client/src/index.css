@@ -15,3 +15,161 @@ body {
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }
+
+/* Monaco Editor Vulnerability Line Highlighting & Glyphs */
+.monaco-line-critical {
+  background: rgba(244, 63, 94, 0.22) !important;
+  border-left: 3px solid #f43f5e !important;
+}
+
+.monaco-line-high {
+  background: rgba(245, 158, 11, 0.20) !important;
+  border-left: 3px solid #f59e0b !important;
+}
+
+.monaco-line-medium {
+  background: rgba(234, 179, 8, 0.15) !important;
+  border-left: 3px solid #eab308 !important;
+}
+
+.monaco-glyph-critical {
+  background: #f43f5e;
+  width: 5px !important;
+  margin-left: 3px;
+  border-radius: 2px;
+}
+
+.monaco-glyph-high {
+  background: #f59e0b;
+  width: 5px !important;
+  margin-left: 3px;
+  border-radius: 2px;
+}
+
+.monaco-glyph-medium {
+  background: #eab308;
+  width: 5px !important;
+  margin-left: 3px;
+  border-radius: 2px;
+}
+
+/* Monaco Editor Performance Bottleneck Line Highlighting & Glyphs */
+.monaco-line-perf-critical {
+  background: rgba(244, 63, 94, 0.22) !important;
+  border-left: 3px solid #f43f5e !important;
+}
+
+.monaco-line-perf-high {
+  background: rgba(245, 158, 11, 0.20) !important;
+  border-left: 3px solid #f59e0b !important;
+}
+
+.monaco-line-perf-medium {
+  background: rgba(14, 165, 233, 0.18) !important;
+  border-left: 3px solid #0ea5e9 !important;
+}
+
+.monaco-glyph-perf-critical {
+  background: #f43f5e;
+  width: 5px !important;
+  margin-left: 3px;
+  border-radius: 2px;
+}
+
+.monaco-glyph-perf-high {
+  background: #f59e0b;
+  width: 5px !important;
+  margin-left: 3px;
+  border-radius: 2px;
+}
+
+.monaco-glyph-perf-medium {
+  background: #0ea5e9;
+  width: 5px !important;
+  margin-left: 3px;
+  border-radius: 2px;
+}
+
+/* ==========================================================================
+   Phase 13: Print-Optimized Stylesheet for Audit Reports & Deliverables
+   ========================================================================== */
+@media print {
+  @page {
+    margin: 1.2cm;
+    size: auto;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 11pt !important;
+    line-height: 1.5 !important;
+  }
+
+  /* Hide navigation, sidebar, headers, controls, and unprintable buttons */
+  aside,
+  header,
+  nav,
+  button,
+  .no-print,
+  [data-no-print="true"] {
+    display: none !important;
+  }
+
+  /* Ensure main content container occupies full printable width */
+  main,
+  .print-container {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  /* Cards and content blocks in print mode */
+  .print-card,
+  .bg-surface-primary,
+  .bg-surface-secondary {
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+  }
+
+  /* Table styling and page-break isolation */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    overflow: visible !important;
+  }
+
+  th,
+  td {
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
+    padding: 6px 10px !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tr,
+  .print-break-inside-avoid,
+  .print-avoid-break {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Code blocks in print */
+  pre,
+  code {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    border-color: #e2e8f0 !important;
+    white-space: pre-wrap !important;
+    word-break: break-all !important;
+  }
+}
+
+
+

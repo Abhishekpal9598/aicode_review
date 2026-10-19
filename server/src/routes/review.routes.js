@@ -19,7 +19,11 @@ import {
   listReviewsSchema,
   getReviewByIdSchema,
   deleteReviewSchema,
-  getSecurityReviewSchema
+  getSecurityReviewSchema,
+  getPerformanceReviewSchema,
+  applyFixSchema,
+  undoFixSchema,
+  exportReviewSchema
 } from '../schemas/review.schema.js';
 
 const router = Router();
@@ -49,6 +53,34 @@ router.get(
   reviewController.getSecurityReview
 );
 
+// GET /api/v1/reviews/:id/performance — Retrieve dedicated performance analysis
+router.get(
+  '/:id/performance',
+  validate(getPerformanceReviewSchema),
+  reviewController.getPerformanceReview
+);
+
+// POST /api/v1/reviews/:id/apply-fix — Persist applied fix to review while preserving rawCode
+router.post(
+  '/:id/apply-fix',
+  validate(applyFixSchema),
+  reviewController.applyFix
+);
+
+// POST /api/v1/reviews/:id/undo-fix — Revert applied fix on review while preserving rawCode
+router.post(
+  '/:id/undo-fix',
+  validate(undoFixSchema),
+  reviewController.undoFix
+);
+
+// GET /api/v1/reviews/:id/export — Export review report as JSON or Markdown
+router.get(
+  '/:id/export',
+  validate(exportReviewSchema),
+  reviewController.exportReview
+);
+
 // GET /api/v1/reviews/:id — Retrieve full deep-dive review inspection
 router.get(
   '/:id',
@@ -64,3 +96,4 @@ router.delete(
 );
 
 export default router;
+

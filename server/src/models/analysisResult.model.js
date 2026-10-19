@@ -129,6 +129,14 @@ const analysisResultSchema = new mongoose.Schema(
       maxlength: [50, 'spaceComplexity cannot exceed 50 characters'],
       default: null
     },
+    complexityType: {
+      type: String,
+      enum: {
+        values: ['deterministic', 'ai-assisted', 'estimated', null],
+        message: 'complexityType must be deterministic, ai-assisted, estimated, or null'
+      },
+      default: null
+    },
     suggestedCode: {
       type: String,
       default: null
@@ -151,7 +159,6 @@ const analysisResultSchema = new mongoose.Schema(
 );
 
 // Indexes
-analysisResultSchema.index({ reviewId: 1 }, { unique: true });
 analysisResultSchema.index({ userId: 1, createdAt: -1 });
 
 export const AnalysisResult = mongoose.model('AnalysisResult', analysisResultSchema);

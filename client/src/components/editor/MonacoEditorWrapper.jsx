@@ -38,7 +38,14 @@ export function defineCyberneticTheme(monacoInstance) {
       'editor.lineHighlightBackground': '#111620',
       'editorGutter.background': '#0A0D12',
       'editorIndentGuide.background': '#18202F',
-      'editorIndentGuide.activeBackground': '#263248'
+      'editorIndentGuide.activeBackground': '#263248',
+      'diffEditor.insertedTextBackground': '#10B98128',
+      'diffEditor.removedTextBackground': '#F43F5E28',
+      'diffEditor.insertedLineBackground': '#10B98118',
+      'diffEditor.removedLineBackground': '#F43F5E18',
+      'diffEditor.diagonalFill': '#18202F',
+      'diffEditorGutter.insertedLineBackground': '#10B98130',
+      'diffEditorGutter.removedLineBackground': '#F43F5E30'
     }
   });
 }

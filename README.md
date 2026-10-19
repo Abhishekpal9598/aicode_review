@@ -44,7 +44,12 @@ Unlike standard linters, the platform provides:
 - **Authentication & Security**: Secure user registration, login, logout, and JWT tokens managed via `HttpOnly`, `SameSite=Strict` cookies.
 - **Developer Dashboard**: High-density analytics displaying total reviews, average quality score, security defect counts, and historical score trend charts (Recharts).
 - **Code Review Workspace**: Monaco Editor supporting C, C++, Java, Python, JavaScript, and TypeScript with real-time character and line counters.
-- **File Upload Ingestion**: Single-file upload (.c, .cpp, .java, .py, .js, .ts up to 1 MB) with client-side UTF-8 validation.
+- **Smart Language Detection & Manual Selection**:
+  - **Auto Detect by Default**: Evaluates syntax heuristics and file extensions in real-time without costly AI roundtrips.
+  - **Manual Selection & Locking**: Developers can explicitly select and freeze any language without subsequent keystrokes overwriting their choice.
+  - **Disambiguation Engine**: Resolves C vs C++ (`std::`, `<iostream>`, templates vs `stdio.h`) and JS vs TS (`interface`, `type`, `as const`, type annotations).
+  - **Status Indicators**: Dynamic badges for `Auto Detected`, `Manually Selected`, and `Detection Uncertain`.
+- **File Upload Ingestion**: Single-file upload (.c, .cpp, .java, .py, .js, .ts up to 1 MB) with client-side UTF-8 validation and automatic language assignment.
 - **AI Bug Detection**: Unhandled null dereferences, infinite loops, boundary errors, and race conditions.
 - **Security Vulnerability Scanner**: Hardcoded API keys/secrets detection, SQL/NoSQL injection vectors, and C/C++ memory safety hazards (buffer overflows, dangling pointers).
 - **Performance Optimizer**: Big-O Time & Space complexity evaluation, memory leak warnings, and loop allocation optimizations.
@@ -57,14 +62,14 @@ Unlike standard linters, the platform provides:
 ## Supported Languages
 
 Initial language support:
-- **C** (`.c`)
-- **C++** (`.cpp`, `.cc`, `.h`, `.hpp`)
-- **Java** (`.java`)
 - **Python** (`.py`)
 - **JavaScript** (`.js`, `.jsx`, `.mjs`)
 - **TypeScript** (`.ts`, `.tsx`)
+- **Java** (`.java`)
+- **C** (`.c`)
+- **C++** (`.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`)
 
-*The modular architecture is designed to support additional languages (Go, Rust, PHP, C#) in future releases.*
+*Includes built-in auto-detection heuristics and manual override capabilities for all 6 languages.*
 
 ---
 

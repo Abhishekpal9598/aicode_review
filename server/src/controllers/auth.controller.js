@@ -90,15 +90,19 @@ export const login = asyncHandler(async (req, res) => {
     throw ApiError.unauthorized('Invalid email or password.', 'INVALID_CREDENTIALS');
   }
 
-  // Sign stateless JWT
+  // Sign stateless JWT with explicit HS256 algorithm and tokenVersion
   const token = jwt.sign(
     {
       id: user._id.toString(),
       email: user.email,
-      role: user.role
+      role: user.role,
+      tokenVersion: user.tokenVersion ?? 0
     },
     env.JWT_SECRET,
-    { expiresIn: env.JWT_EXPIRES_IN }
+    {
+      expiresIn: env.JWT_EXPIRES_IN,
+      algorithm: 'HS256'
+    }
   );
 
   // Set secure HttpOnly cookie
@@ -116,9 +120,16 @@ export const login = asyncHandler(async (req, res) => {
 
 /**
  * POST /api/v1/auth/logout
- * Authenticated logout clearing HttpOnly cookie.
+ * Authenticated logout: invalidates server-side token session via tokenVersion increment and clears HttpOnly cookie.
  */
 export const logout = asyncHandler(async (req, res) => {
+  assertDatabaseConnected();
+
+  // Invalidate all tokens for this user on logout
+  if (req.user && req.user._id) {
+    await User.findByIdAndUpdate(req.user._id, { $inc: { tokenVersion: 1 } });
+  }
+
   res.clearCookie('access_token', {
     httpOnly: true,
     secure: env.NODE_ENV === 'production',

@@ -61,9 +61,30 @@ export const reviewLimiter = rateLimit({
   }
 });
 
+/**
+ * Configurable Rate Limiter for Public Health Endpoints (/api/health, /api/v1/health).
+ * Protects health check endpoints against DoS while permitting legitimate monitoring tools.
+ * Defaults to 60 requests per minute per IP (configurable via HEALTH_RATE_LIMIT_MAX).
+ */
+export const healthLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: env.HEALTH_RATE_LIMIT_MAX || 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res, next) => {
+    next(
+      ApiError.tooManyRequests(
+        'Too many health check requests from this IP address. Please slow down.',
+        'RATE_LIMIT_EXCEEDED'
+      )
+    );
+  }
+});
+
 export default {
   authLimiter,
   staticAnalysisLimiter,
-  reviewLimiter
+  reviewLimiter,
+  healthLimiter
 };
 

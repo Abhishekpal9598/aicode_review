@@ -1,4 +1,4 @@
-import React, { Suspense, useRef, useState, useCallback, useEffect } from 'react';
+import React, { Suspense, useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useSearchParams, useInRouterContext } from 'react-router-dom';
 import { PageHeader } from '../components/common/PageHeader';
 import { Card } from '../components/ui/Card';
@@ -11,15 +11,18 @@ import {
   ShieldCheck,
   Sparkles,
   Bot,
-  AlertTriangle
+  AlertTriangle,
+  Check
 } from 'lucide-react';
 import useEditorState from '../hooks/useEditorState';
 import EditorToolbar from '../components/editor/EditorToolbar';
 import EditorStatusBar from '../components/editor/EditorStatusBar';
 import FileUploadZone from '../components/editor/FileUploadZone';
 import FindingsPanel from '../components/editor/FindingsPanel';
+import ApplyFixModal from '../components/editor/ApplyFixModal';
 import { EditorLoadingState } from '../components/editor/EditorLoadingState';
 import apiClient from '../services/apiClient';
+import { detectLanguageMismatch, SUPPORTED_LANGUAGES } from '../utils/languageMap';
 
 // Lazy-load MonacoEditorWrapper to keep Monaco out of the initial application bundle
 const MonacoEditorWrapper = React.lazy(
@@ -59,9 +62,23 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
   const [isFindingsOpen, setIsFindingsOpen] = useState(false);
   const [pendingDeepLinkReviewId, setPendingDeepLinkReviewId] = useState(null);
 
+  // Phase 11: Apply Fix & Undo state
+  const [undoStack, setUndoStack] = useState([]);
+  const [appliedFixIds, setAppliedFixIds] = useState([]);
+  const [activeFixToPreview, setActiveFixToPreview] = useState(null);
+  const [isApplyingFix, setIsApplyingFix] = useState(false);
+  const [fixFeedback, setFixFeedback] = useState(null);
+
   const {
     code,
     language,
+    effectiveLanguage,
+    selectedMode,
+    manualLanguage,
+    detectedLanguage,
+    detectionConfidence,
+    detectionStatus,
+    isManualOverride,
     fileName,
     isDirty,
     error,
@@ -121,6 +138,13 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
     [changeLanguage, clearDecorations]
   );
 
+  const mismatchInfo = useMemo(() => {
+    if (selectedMode === 'auto') {
+      return { isMismatch: false, detectedLanguage: null, detectedLabel: null };
+    }
+    return detectLanguageMismatch(code, language);
+  }, [code, language, selectedMode]);
+
   // Apply Monaco line decorations for detected findings
   const applyDecorations = useCallback((findings) => {
     if (!editorRef.current || !monacoRef.current || !Array.isArray(findings)) return;
@@ -129,27 +153,34 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
     const editor = editorRef.current;
 
     const newDecorations = findings.map((finding) => {
+      const isPerf = finding.category === 'performance';
       const isCrit = finding.severity === 'CRITICAL';
       const isHigh = finding.severity === 'HIGH';
+
+      const lineClass = isPerf
+        ? (isCrit ? 'monaco-line-perf-critical' : isHigh ? 'monaco-line-perf-high' : 'monaco-line-perf-medium')
+        : (isCrit ? 'monaco-line-critical' : isHigh ? 'monaco-line-high' : 'monaco-line-medium');
+
+      const glyphClass = isPerf
+        ? (isCrit ? 'monaco-glyph-perf-critical' : isHigh ? 'monaco-glyph-perf-high' : 'monaco-glyph-perf-medium')
+        : (isCrit ? 'monaco-glyph-critical' : isHigh ? 'monaco-glyph-high' : 'monaco-glyph-medium');
 
       return {
         range: new monaco.Range(
           Math.max(1, finding.lineStart || 1),
-          Math.max(1, finding.columnStart || 1),
+          1,
           Math.max(1, finding.lineEnd || finding.lineStart || 1),
-          Math.max(1, finding.columnEnd || 100)
+          1
         ),
         options: {
           isWholeLine: true,
-          className: isCrit
-            ? 'bg-rose-500/15'
-            : isHigh
-            ? 'bg-amber-500/15'
-            : 'bg-yellow-500/10',
-          glyphMarginClassName: isCrit ? 'text-rose-400' : 'text-amber-400',
+          className: lineClass,
+          glyphMarginClassName: glyphClass,
           overviewRuler: {
-            color: isCrit ? '#F43F5E' : isHigh ? '#F59E0B' : '#EAB308',
-            position: monaco.editor.OverviewRulerLane.Right
+            color: isPerf
+              ? (isCrit ? '#F43F5E' : isHigh ? '#F59E0B' : '#0EA5E9')
+              : (isCrit ? '#F43F5E' : isHigh ? '#F59E0B' : '#EAB308'),
+            position: monaco.editor.OverviewRulerLane.Full
           }
         }
       };
@@ -161,7 +192,8 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
   // Safe Monaco line navigation when user clicks finding card
   const handleSelectFinding = (finding) => {
     if (!finding) return;
-    setActiveFindingId(finding.id);
+    const findingId = finding.id || finding._id || `${finding.ruleId}-${finding.lineStart}`;
+    setActiveFindingId(findingId);
 
     if (editorRef.current) {
       const editor = editorRef.current;
@@ -174,6 +206,181 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
       editor.focus();
     }
   };
+
+  // Phase 11: Request to review & apply a fix (validates snippet & line range before opening modal)
+  const handleRequestApplyFix = useCallback(
+    (finding) => {
+      if (!finding) return;
+      if (!finding.suggestedSnippet || finding.suggestedSnippet.trim().length === 0) {
+        setFixFeedback({
+          type: 'error',
+          message: 'Cannot apply fix: No suggested code replacement was provided for this finding.'
+        });
+        return;
+      }
+
+      const totalLines = (code || '').split(/\r?\n/).length;
+      const lineStart = Math.max(1, finding.lineStart || 1);
+
+      if (lineStart > totalLines) {
+        setFixFeedback({
+          type: 'error',
+          message: `Cannot apply fix: Target line ${lineStart} exceeds current editor line count (${totalLines} lines).`
+        });
+        return;
+      }
+
+      setActiveFixToPreview(finding);
+    },
+    [code]
+  );
+
+  // Phase 11: Confirm and execute the proposed code fix
+  const handleConfirmApplyFix = useCallback(
+    async (finding) => {
+      if (!finding || !finding.suggestedSnippet) return;
+
+      setIsApplyingFix(true);
+      setFixFeedback(null);
+
+      const currentCode = code || '';
+      const lines = currentCode.split(/\r?\n/);
+      const totalLines = lines.length;
+
+      const lineStart = Math.min(Math.max(1, finding.lineStart || 1), totalLines);
+      const lineEnd = Math.min(Math.max(lineStart, finding.lineEnd || lineStart), totalLines);
+
+      // Extract original snippet for undo history
+      const originalSnippet = lines.slice(lineStart - 1, lineEnd).join('\n');
+
+      // Construct new code with multiline support and preserving surrounding code
+      const beforeLines = lines.slice(0, lineStart - 1);
+      const afterLines = lines.slice(lineEnd);
+      const replacementLines = finding.suggestedSnippet.split(/\r?\n/);
+      const newCode = [...beforeLines, ...replacementLines, ...afterLines].join('\n');
+
+      // Apply via Monaco executeEdits if mounted
+      if (editorRef.current && monacoRef.current) {
+        try {
+          const editor = editorRef.current;
+          const monaco = monacoRef.current;
+          const model = editor.getModel();
+          if (model) {
+            const lineCount = model.getLineCount();
+            const safeEndLine = Math.min(lineEnd, lineCount);
+            const maxCol = model.getLineMaxColumn(safeEndLine);
+            editor.executeEdits('apply-fix', [
+              {
+                range: new monaco.Range(lineStart, 1, safeEndLine, maxCol),
+                text: finding.suggestedSnippet,
+                forceMoveMarkers: true
+              }
+            ]);
+            editor.pushUndoStop();
+          }
+        } catch (err) {
+          console.warn('[CodeReview] Monaco executeEdits error:', err);
+        }
+      }
+
+      // Update state
+      updateCode(newCode);
+
+      const fixRecord = {
+        id: `fix-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        findingId: finding.id,
+        ruleId: finding.ruleId || null,
+        title: finding.title || 'Code Fix',
+        previousCode: currentCode,
+        appliedCode: newCode,
+        lineStart,
+        lineEnd,
+        previousSnippet: originalSnippet,
+        appliedSnippet: finding.suggestedSnippet,
+        timestamp: new Date().toISOString()
+      };
+
+      setUndoStack((prev) => [...prev, fixRecord]);
+      setAppliedFixIds((prev) => [...new Set([...prev, finding.id])]);
+
+      // Persist to backend if review is loaded
+      const currentReviewId = loadedReviewIdRef.current || (analysisResult?.review?._id?.toString?.() || analysisResult?.review?.id?.toString?.());
+      if (currentReviewId && /^[0-9a-fA-F]{24}$/.test(currentReviewId)) {
+        try {
+          await apiClient.applyFix(currentReviewId, {
+            issueId: /^[0-9a-fA-F]{24}$/.test(finding.id) ? finding.id : null,
+            ruleId: finding.ruleId || null,
+            lineStart,
+            lineEnd,
+            previousSnippet: originalSnippet,
+            appliedSnippet: finding.suggestedSnippet,
+            updatedCode: newCode
+          });
+        } catch (err) {
+          console.warn('[CodeReview] Persist applied fix to backend error:', err);
+        }
+      }
+
+      setActiveFixToPreview(null);
+      setIsApplyingFix(false);
+      setFixFeedback({
+        type: 'success',
+        message: `Successfully applied fix for "${finding.title}" at lines ${lineStart}–${lineEnd}.`
+      });
+    },
+    [code, updateCode, analysisResult]
+  );
+
+  // Phase 11: Undo the most recently applied fix (or specific finding) in LIFO order
+  const handleUndoFix = useCallback(
+    async (specificFindingId = null) => {
+      if (undoStack.length === 0) {
+        setFixFeedback({
+          type: 'error',
+          message: 'No applied fixes available to undo.'
+        });
+        return;
+      }
+
+      // Pop the most recent fix (or find specific if requested)
+      const fixToUndo = specificFindingId
+        ? undoStack.slice().reverse().find((f) => f.findingId === specificFindingId) || undoStack[undoStack.length - 1]
+        : undoStack[undoStack.length - 1];
+
+      const remainingStack = undoStack.filter((f) => f.id !== fixToUndo.id);
+      setUndoStack(remainingStack);
+      setAppliedFixIds((prev) => prev.filter((id) => id !== fixToUndo.findingId));
+
+      // Restore exact previous editor buffer
+      updateCode(fixToUndo.previousCode);
+
+      if (editorRef.current) {
+        try {
+          editorRef.current.setValue(fixToUndo.previousCode);
+        } catch (err) {
+          console.warn('[CodeReview] Monaco setValue error on undo:', err);
+        }
+      }
+
+      // Persist undo to backend if review is loaded
+      const currentReviewId = loadedReviewIdRef.current || (analysisResult?.review?._id?.toString?.() || analysisResult?.review?.id?.toString?.());
+      if (currentReviewId && /^[0-9a-fA-F]{24}$/.test(currentReviewId)) {
+        try {
+          await apiClient.undoFix(currentReviewId, {
+            restoredCode: fixToUndo.previousCode
+          });
+        } catch (err) {
+          console.warn('[CodeReview] Persist undo fix to backend error:', err);
+        }
+      }
+
+      setFixFeedback({
+        type: 'success',
+        message: `Undid fix for "${fixToUndo.title}". Editor code restored.`
+      });
+    },
+    [undoStack, updateCode, analysisResult]
+  );
 
   // Trigger Static Code Analysis via API (Phase 7 transient checks)
   const handleAnalyze = async () => {
@@ -270,8 +477,16 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
           if (review?.language && review.language !== language) {
             changeLanguage(review.language);
           }
-          if (review?.rawCode) {
+          if (review?.currentCode) {
+            updateCode(review.currentCode);
+          } else if (review?.rawCode) {
             updateCode(review.rawCode);
+          }
+          if (review?.appliedFixes && Array.isArray(review.appliedFixes)) {
+            const appliedIds = review.appliedFixes
+              .map((f) => f.issueId?.toString() || f.ruleId)
+              .filter(Boolean);
+            setAppliedFixIds(appliedIds);
           }
           setAnalysisResult(response.data);
           setIsStale(false);
@@ -306,6 +521,19 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
       }
     }
   }, [reviewIdParam, isDirty, loadReviewById]);
+
+  // Effect: Handle line navigation via ?line=<number>
+  useEffect(() => {
+    const lineParam = searchParams.get('line');
+    if (lineParam && editorRef.current) {
+      const lineNum = parseInt(lineParam, 10);
+      if (!isNaN(lineNum) && lineNum >= 1) {
+        editorRef.current.revealLineInCenter(lineNum);
+        editorRef.current.setPosition({ lineNumber: lineNum, column: 1 });
+        editorRef.current.focus();
+      }
+    }
+  }, [searchParams]);
 
   const handleConfirmDeepLink = () => {
     if (pendingDeepLinkReviewId) {
@@ -353,6 +581,80 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {/* Dismissible Apply/Undo Fix Feedback Banner */}
+      {fixFeedback && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="fix-feedback-banner"
+          className={`flex items-center justify-between p-3.5 rounded-lg border text-xs animate-in fade-in-50 duration-200 ${
+            fixFeedback.type === 'error'
+              ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+              : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            {fixFeedback.type === 'error' ? (
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            ) : (
+              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            )}
+            <span className="font-medium">{fixFeedback.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFixFeedback(null)}
+            aria-label="Dismiss feedback"
+            className={`p-1 rounded transition-colors cursor-pointer ${
+              fixFeedback.type === 'error'
+                ? 'hover:bg-rose-500/20 text-rose-400 hover:text-rose-200'
+                : 'hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-200'
+            }`}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Dynamic Language Mismatch Warning Banner */}
+      {mismatchInfo.isMismatch && (
+        <div
+          role="alert"
+          data-testid="language-mismatch-banner"
+          className="flex items-center justify-between p-3.5 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs animate-in fade-in-50 duration-200"
+        >
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="font-medium">
+              Language Mismatch: The code appears to be written in <strong>{mismatchInfo.detectedLabel}</strong>, but <strong>{SUPPORTED_LANGUAGES.find((l) => l.id === language)?.label || language}</strong> is currently selected.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleLanguageChange(mismatchInfo.detectedLanguage)}
+            className="px-2.5 py-1 rounded bg-amber-500/30 hover:bg-amber-500/40 border border-amber-500/50 text-amber-100 font-semibold transition-colors cursor-pointer shrink-0 ml-2"
+          >
+            Switch to {mismatchInfo.detectedLabel}
+          </button>
+        </div>
+      )}
+
+      {/* Detection Uncertain Notice Banner */}
+      {selectedMode === 'auto' && detectionConfidence === 'UNCERTAIN' && code && code.trim().length > 0 && (
+        <div
+          role="status"
+          data-testid="detection-uncertain-banner"
+          className="flex items-center justify-between p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs animate-in fade-in-50 duration-200"
+        >
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>
+              Language detection is uncertain. Monaco is using <strong>{SUPPORTED_LANGUAGES.find((l) => l.id === language)?.label || language}</strong> syntax. You can confirm or manually select your language using the selector above.
+            </span>
+          </div>
         </div>
       )}
 
@@ -416,6 +718,11 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
         {/* Top Command Strip / Toolbar */}
         <EditorToolbar
           language={language}
+          selectedMode={selectedMode}
+          detectedLanguage={detectedLanguage}
+          detectionConfidence={detectionConfidence}
+          detectionStatus={detectionStatus}
+          isManualOverride={isManualOverride}
           fileName={fileName}
           isDirty={isDirty}
           code={code}
@@ -428,6 +735,9 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
             setIsStale(false);
             setIsFindingsOpen(false);
             clearDecorations();
+            setUndoStack([]);
+            setAppliedFixIds([]);
+            setFixFeedback(null);
           }}
           onRequestReset={requestReset}
           onConfirmReset={() => {
@@ -436,8 +746,13 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
             setIsStale(false);
             setIsFindingsOpen(false);
             clearDecorations();
+            setUndoStack([]);
+            setAppliedFixIds([]);
+            setFixFeedback(null);
           }}
           onCancelReset={cancelReset}
+          onUndoFix={() => handleUndoFix()}
+          undoStackCount={undoStack.length}
           onAnalyze={handleAnalyze}
           isAnalyzing={isAnalyzing}
           isStale={isStale}
@@ -470,6 +785,9 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
               onClose={() => setIsFindingsOpen(false)}
               activeFindingId={activeFindingId}
               onRetryReview={handleSubmitReview}
+              onRequestApplyFix={handleRequestApplyFix}
+              appliedFixIds={appliedFixIds}
+              onUndoFix={handleUndoFix}
             />
           )}
         </div>
@@ -482,6 +800,18 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
           isDirty={isDirty}
         />
       </FileUploadZone>
+
+      {/* Phase 11: Apply Fix Confirmation & Preview Modal */}
+      {activeFixToPreview && (
+        <ApplyFixModal
+          isOpen={Boolean(activeFixToPreview)}
+          finding={activeFixToPreview}
+          code={code}
+          onConfirm={handleConfirmApplyFix}
+          onCancel={() => setActiveFixToPreview(null)}
+          isApplying={isApplyingFix}
+        />
+      )}
 
       {/* Contextual Developer Guides & Shortcuts */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">

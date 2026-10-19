@@ -114,7 +114,12 @@ The **AI Code Review** platform provides an automated, objective, instant code r
 - **Multi-Input Ingestion**:
   - Direct paste or typing in the editor.
   - Single-file upload (.c, .cpp, .java, .py, .js, .ts) with UTF-8 encoding verification and file size capping ($\le 1 \text{ MB}$).
-- **Language Selector**: Instant grammar switching between C, C++, Java, Python, JavaScript, and TypeScript.
+- **Smart Programming Language Detection Engine**:
+  - **Auto-Detect by Default**: Deterministic client-side syntax scoring analyzes code patterns in real-time without costly AI round-trips.
+  - **Confidence Tiers**: Evaluates score differentials to assign `HIGH`, `MEDIUM`, or `UNCERTAIN` confidence levels.
+  - **Accurate Syntax Disambiguation**: Specialized heuristic rules differentiate C vs. C++ (`std::`, `<iostream>`, `cout` vs. `stdio.h`, `printf`) and JavaScript vs. TypeScript (`interface`, `type`, `as const`, type annotations).
+  - **Manual Selection & Strict Override**: Dropdown allows manual selection of any of the 6 supported languages (`Python`, `JavaScript`, `TypeScript`, `Java`, `C`, `C++`); manual choices strictly lock and are never overwritten by subsequent code edits.
+  - **Dynamic Status Indicators**: Status badge in the toolbar clearly informs developers whether the language is `Auto Detected`, `Manually Selected`, or if `Detection Uncertain` (prompting explicit selection).
 - **Execution Bar**: Status indicators, character/line count indicators, Reset button, and prominent "Analyze Code" trigger with loading state.
 
 ### 7.4 Multi-Dimensional AI Code Analysis Engine

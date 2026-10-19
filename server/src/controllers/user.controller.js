@@ -1,5 +1,6 @@
 import { getDBStatus } from '../config/db.js';
 import CodeReview from '../models/review.model.js';
+import ReviewIssue from '../models/reviewIssue.model.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
@@ -30,7 +31,17 @@ export const getUserStats = asyncHandler(async (req, res) => {
     .limit(5)
     .select('title language lineCount status createdAt');
 
-  // 4. Return standardized envelope matching ApiResponse.js
+  // 4. Calibrate performance bottlenecks in Phase 10 when reviews exist
+  let performanceBottlenecks = null;
+  if (totalReviews > 0) {
+    performanceBottlenecks = await ReviewIssue.countDocuments({
+      userId,
+      category: 'performance',
+      severity: { $in: ['CRITICAL', 'HIGH'] }
+    });
+  }
+
+  // 5. Return standardized envelope matching ApiResponse.js
   return new ApiResponse(
     200,
     {
@@ -38,7 +49,7 @@ export const getUserStats = asyncHandler(async (req, res) => {
         totalReviews,
         averageQualityScore: null,     // Calibrates in Phase 8
         criticalSecurityIssues: null, // Calibrates in Phase 7 & 9
-        performanceBottlenecks: null  // Calibrates in Phase 10
+        performanceBottlenecks
       },
       scoreHistory: [],
       languageDistribution: [],

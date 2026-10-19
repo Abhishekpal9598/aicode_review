@@ -327,4 +327,77 @@ describe('Phase 7: Static Code Analysis Frontend Integration Tests', () => {
     fireEvent.click(screen.getByRole('button', { name: /dismiss error/i }));
     expect(screen.queryByText('Static analysis engine timeout')).not.toBeInTheDocument();
   });
+
+  it('Test 9: Findings card displays CWE badge, OWASP category badge, confidence status, and remediation explanation', () => {
+    const analysisWithSecData = {
+      scoring: { overallScore: 75, grade: 'B' },
+      metrics: {
+        totalLines: 10,
+        executionTimeMs: 5,
+        severityCounts: { critical: 1, high: 0, medium: 0, low: 0, info: 0 }
+      },
+      findings: [
+        {
+          id: 'finding-1',
+          ruleId: 'SEC-PY-SQL-002',
+          category: 'SEC',
+          severity: 'CRITICAL',
+          title: 'SQL Injection via Dynamic String Concatenation',
+          explanation: 'Untrusted user input alters SQL logic.',
+          cwe: 'CWE-89',
+          owaspCategory: 'A03:2021-Injection',
+          confidence: 'HIGH',
+          lineStart: 7,
+          columnStart: 5,
+          originalSnippet: 'query = "SELECT * FROM users WHERE username = \'" + username',
+          suggestedSnippet: 'cursor.execute("SELECT * FROM users WHERE username = ?", (username,))',
+          remediation: 'Use parameterized query placeholders to prevent SQL injection.'
+        }
+      ]
+    };
+
+    render(
+      <FindingsPanel
+        analysisResult={analysisWithSecData}
+        onSelectFinding={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId('badge-cwe')).toHaveTextContent('CWE-89');
+    expect(screen.getByTestId('badge-owasp')).toHaveTextContent('A03:2021-Injection');
+    expect(screen.getByTestId('badge-confidence')).toHaveTextContent('HIGH Confidence');
+    expect(screen.getByText(/Why this correction works:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Use parameterized query placeholders to prevent SQL injection/i)).toBeInTheDocument();
+    expect(screen.getByText(/Corrected Code Suggestion/i)).toBeInTheDocument();
+  });
+
+  it('Test 10: Dynamic language mismatch displays warning banner and button to switch language', async () => {
+    render(<CodeReview />);
+
+    // Switch to C++ initially
+    fireEvent.click(screen.getByRole('button', { name: /select programming language/i }));
+    fireEvent.click(screen.getByRole('option', { name: /C\+\+/i }));
+
+    // Paste Python code into editor textarea
+    const textarea = screen.getByTestId('monaco-editor-textarea');
+    fireEvent.change(textarea, {
+      target: {
+        value: 'import sqlite3\nconn = sqlite3.connect("test.db")\ndef login(username, password):\n    pass\n'
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('language-mismatch-banner')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /switch to python/i })).toBeInTheDocument();
+    });
+
+    // Clicking switch to Python changes language without clearing code
+    fireEvent.click(screen.getByRole('button', { name: /switch to python/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('language-mismatch-banner')).not.toBeInTheDocument();
+    });
+  });
 });
+

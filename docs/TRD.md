@@ -114,15 +114,16 @@ client/src/
 ├── services/
 │   ├── api.js               # Axios instance with baseUrl and withCredentials: true
 │   ├── authService.js       # Auth API client
-│   └── reviewService.js     # Review & report API client
+│   ├── reviewService.js     # Review & report API client
+│   └── languageDetector.js  # Deterministic multi-heuristic language detection service
 └── utils/
-    ├── languageMap.js       # File extension to Monaco language mapping
+    ├── languageMap.js       # File extension mapping, option constants, and language metadata
     └── formatters.js        # Date, score color coding, and complexity badge helpers
 ```
 
 ### 3.2 State Management & Data Flow
 1. **Auth State**: Centralized in React Context (`AuthContext`). On initial load, performs a silent session verification (`GET /api/v1/auth/me`).
-2. **Review Workspace State**: Local state with optimistic UI updates. Code editor contents, selected language, and uploaded file metadata are tracked in `WorkspacePage`.
+2. **Review Workspace State**: Managed via `useEditorState` hook with optimistic UI updates. Controls code buffer, `selectedMode` (`'auto' | 'manual'`), `manualLanguage`, `detectedLanguage`, `detectionConfidence`, and `effectiveLanguage`.
 3. **Async Operations**: Axios interceptors intercept 401 Unauthorized responses to trigger session invalidation and redirect to login.
 
 ### 3.3 Monaco Editor Integration Details
@@ -143,6 +144,14 @@ client/src/
   }
   ```
 - **Monaco Diff Viewer**: Used in the code comparison view to render `originalCode` vs. `suggestedCode` with inline side-by-side highlighting, enabling developers to visually confirm suggested patches before copying.
+
+### 3.4 Smart Language Detection Architecture
+- **Deterministic Heuristics (`languageDetector.js`)**:
+  - `detectLanguageFromExtension(fileName, content)`: Maps extensions (`.py`, `.js`, `.jsx`, `.ts`, `.tsx`, `.java`, `.c`, `.cpp`, `.cc`, `.cxx`, `.hpp`) to supported languages; disambiguates `.h` by checking for C++ constructs (`class`, `template`, `std::`, `namespace`) or defaulting to C with medium confidence.
+  - `detectLanguageFromContent(code)`: Computes weighted signature scores across Python, JavaScript, TypeScript, Java, C, and C++.
+  - **Disambiguation Rules**: C vs C++ (stream operators, `<iostream>`, classes, namespaces, templates vs `#include <stdio.h>`, `printf`) and JavaScript vs TypeScript (`interface`, `type`, `as const`, type annotations, generic parameters).
+  - **Confidence Classification**: Returns `HIGH` (differential $\ge 4$), `MEDIUM` (differential $\ge 2$), or `UNCERTAIN` ($< 2$ or empty).
+  - **Manual Override Invariant**: In manual mode, manual selection strictly determines `effectiveLanguage` and Monaco mode; code mutations never overwrite user choice.
 
 ---
 

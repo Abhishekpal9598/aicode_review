@@ -37,9 +37,9 @@ describe('Phase 9 — Step 2: Unified Rule Registry & Engine Integration', () =>
       assert.ok(!baseRules.some((r) => r.ruleId === 'SEC-PY-SQL-001'), 'getAllRules() must not include Phase 9 domain rules');
     });
 
-    it('getAllRegisteredRules() must return all 79 unified rules (37 base + 42 security)', () => {
+    it('getAllRegisteredRules() must return all 80 unified rules (37 base + 43 security)', () => {
       const allRules = getAllRegisteredRules();
-      assert.equal(allRules.length, 79, 'getAllRegisteredRules() must return exactly 79 unified rules');
+      assert.equal(allRules.length, 80, 'getAllRegisteredRules() must return exactly 80 unified rules');
       
       // Verify presence of both Phase 7 and Phase 9 rules
       assert.ok(allRules.some((r) => r.ruleId === 'SEC-GEN-001'), 'Must include universal secrets');
@@ -48,7 +48,7 @@ describe('Phase 9 — Step 2: Unified Rule Registry & Engine Integration', () =>
       assert.ok(allRules.some((r) => r.ruleId === 'SEC-JS-SSRF-001'), 'Must include Phase 9 security rules');
     });
 
-    it('all 79 rule IDs must be globally unique with zero collisions', () => {
+    it('all 80 rule IDs must be globally unique with zero collisions', () => {
       const allRules = getAllRegisteredRules();
       const idSet = new Set();
       const duplicates = [];
@@ -61,13 +61,13 @@ describe('Phase 9 — Step 2: Unified Rule Registry & Engine Integration', () =>
       }
 
       assert.equal(duplicates.length, 0, `Detected duplicate ruleIds: ${duplicates.join(', ')}`);
-      assert.equal(idSet.size, 79, 'Must have exactly 79 unique rule IDs');
+      assert.equal(idSet.size, 80, 'Must have exactly 80 unique rule IDs');
     });
 
     it('getRulesForLanguage() must return exact expected rule counts per language', () => {
-      // Python: 5 (secrets) + 5 (Phase 7) + 10 (Security) = 20
+      // Python: 5 (secrets) + 5 (Phase 7) + 11 (Security) = 21
       const pythonRules = getRulesForLanguage('python');
-      assert.equal(pythonRules.length, 20, `Expected 20 Python rules, received ${pythonRules.length}`);
+      assert.equal(pythonRules.length, 21, `Expected 21 Python rules, received ${pythonRules.length}`);
 
       // JavaScript: 5 (secrets) + 7 (Phase 7) + 15 (Security) = 27
       const jsRules = getRulesForLanguage('javascript');
