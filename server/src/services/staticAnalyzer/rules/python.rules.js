@@ -31,16 +31,19 @@ export const pythonRules = [
   },
   {
     ruleId: 'RISK-PY-003',
-    name: 'Shell Injection in Python (subprocess shell=True)',
-    title: 'Subprocess Command Execution with shell=True',
+    name: 'Command Execution / Shell Injection in Python (os.system/subprocess)',
+    title: 'Command Execution / Shell Injection (os.system/subprocess)',
     category: 'RISK',
     severity: 'HIGH',
     scanRaw: false,
-    regex: /subprocess\s*\.\s*(?:Popen|call|check_call|check_output|run)\s*\([^)]*shell\s*=\s*True/g,
+    regex:
+      /(?:subprocess\s*\.\s*(?:Popen|call|check_call|check_output|run)\s*\([^)]*shell\s*=\s*True|\bos\s*\.\s*(?:system|popen|spawn[lpe]*)\s*\()/g,
+    matchFilter: (match, targetText) => !isInsidePythonStringLiteral(targetText, match.index),
     explanation:
-      'Invoking subprocesses with shell=True spawns a system shell, exposing the application to command injection if unescaped variables are included.',
+      'Executing system commands via os.system(), os.popen(), or subprocess with shell=True spawns a system shell, exposing the application to command injection if unescaped variables are included.',
     suggestedSnippet: 'subprocess.run(["cmd", arg1, arg2], shell=False, check=True)',
-    remediation: 'Pass arguments as a sequence of strings and keep shell=False (the default).'
+    remediation:
+      'Pass arguments as a sequence of strings and keep shell=False (the default) using subprocess.run(). Avoid os.system() and os.popen().'
   },
   {
     ruleId: 'QUAL-PY-001',
@@ -69,5 +72,30 @@ export const pythonRules = [
     remediation: 'Use None as the default argument and initialize the mutable object inside the function body.'
   }
 ];
+
+/**
+ * Helper to determine if a match index is inside a Python string literal or docstring
+ * @param {string} text 
+ * @param {number} index 
+ * @returns {boolean}
+ */
+export function isInsidePythonStringLiteral(text, index) {
+  if (typeof text !== 'string' || index <= 0) return false;
+
+  // 1. Check if inside triple quotes before index
+  const prefix = text.slice(0, index);
+  const tripleDoubleCount = (prefix.match(/"""/g) || []).length;
+  if (tripleDoubleCount % 2 !== 0) return true;
+  const tripleSingleCount = (prefix.match(/'''/g) || []).length;
+  if (tripleSingleCount % 2 !== 0) return true;
+
+  // 2. Check if inside single-line quotes on current line (after stripping closed triple quotes)
+  const lineStart = text.lastIndexOf('\n', index - 1) + 1;
+  let lineBefore = text.slice(lineStart, index);
+  lineBefore = lineBefore.replace(/"""[\s\S]*?"""/g, '').replace(/'''[\s\S]*?'''/g, '');
+  const doubleQuotes = (lineBefore.match(/(?<!\\)"/g) || []).length;
+  const singleQuotes = (lineBefore.match(/(?<!\\)'/g) || []).length;
+  return doubleQuotes % 2 !== 0 || singleQuotes % 2 !== 0;
+}
 
 export default pythonRules;

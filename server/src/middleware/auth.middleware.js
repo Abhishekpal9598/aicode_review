@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import { env } from '../config/env.js';
+import { isOriginAllowed } from '../config/cors.js';
 import { getDBStatus } from '../config/db.js';
 import User from '../models/user.model.js';
 import ApiError from '../utils/ApiError.js';
@@ -34,20 +35,39 @@ export const authenticate = asyncHandler(async (req, res, next) => {
   }
 
   // 3. CSRF Protection for Cookie-Based Unsafe Requests (POST, PUT, DELETE, PATCH)
-  // TRD.md Section 7 requirement: SameSite=Strict combined with custom request headers (X-Requested-With)
   if (isCookieAuth && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method.toUpperCase())) {
     const customHeader = req.headers['x-requested-with'];
     const origin = req.headers.origin;
-    const allowedOrigin = env.CLIENT_URL;
+    const referer = req.headers.referer;
 
-    const hasValidHeader = customHeader === 'XMLHttpRequest';
-    const hasValidOrigin = origin && origin === allowedOrigin;
+    // A. If Origin is present, it MUST be an allowed origin
+    if (origin) {
+      if (!isOriginAllowed(origin)) {
+        throw ApiError.forbidden(
+          'CSRF validation failed: untrusted origin.',
+          'CSRF_VALIDATION_FAILED'
+        );
+      }
+    }
+    // B. If Origin is absent, verify Referer or require custom header
+    else {
+      let isRefererAllowed = false;
+      if (referer) {
+        try {
+          const refererOrigin = new URL(referer).origin;
+          isRefererAllowed = isOriginAllowed(refererOrigin);
+        } catch {
+          isRefererAllowed = false;
+        }
+      }
 
-    if (!hasValidHeader && !hasValidOrigin) {
-      throw ApiError.forbidden(
-        'CSRF validation failed: missing custom request header or untrusted origin.',
-        'CSRF_VALIDATION_FAILED'
-      );
+      const hasValidHeader = customHeader === 'XMLHttpRequest';
+      if (!isRefererAllowed && !hasValidHeader) {
+        throw ApiError.forbidden(
+          'CSRF validation failed: missing custom request header or untrusted origin.',
+          'CSRF_VALIDATION_FAILED'
+        );
+      }
     }
   }
 
@@ -101,5 +121,30 @@ export const authenticate = asyncHandler(async (req, res, next) => {
 
   next();
 });
+
+/**
+ * Role-Based Access Control (RBAC) Authorization Middleware.
+ * Enforces that the authenticated user possesses one of the allowed roles.
+ * Must be used after the `authenticate` middleware.
+ *
+ * @param {...string} allowedRoles - Roles permitted to access the route (e.g. 'lead', 'admin')
+ * @returns {Function} Express middleware function
+ */
+export const authorize = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      throw ApiError.unauthorized('Authentication required.', 'AUTH_TOKEN_MISSING');
+    }
+
+    if (allowedRoles.length > 0 && !allowedRoles.includes(req.user.role)) {
+      throw ApiError.forbidden(
+        'You do not have permission to access this resource.',
+        'FORBIDDEN'
+      );
+    }
+
+    next();
+  };
+};
 
 export default authenticate;

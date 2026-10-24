@@ -31,12 +31,14 @@ export const javascriptRules = [
   },
   {
     ruleId: 'RISK-JS-003',
-    name: 'Insecure Shell Concatenation in JavaScript (child_process.exec)',
+    name: 'Insecure Shell Concatenation in JavaScript (child_process.exec / require)',
     title: 'Insecure Command Concatenation (child_process.exec)',
     category: 'RISK',
     severity: 'CRITICAL',
     scanRaw: false,
-    regex: /child_process\s*\.\s*exec\s*\([^)]*[\$\+]/g,
+    regex:
+      /(?:child_process|require\s*\(\s*['"](?:node:)?child_process['"]\s*\))\s*\.\s*(?:exec|execSync)\s*\([^)]*[\$\+]/g,
+    matchFilter: (match, targetText) => !isInsideJsStringLiteral(targetText, match.index),
     explanation:
       'Passing dynamically concatenated strings with variables to child_process.exec() passes the string to a system shell, enabling command injection.',
     suggestedSnippet: 'child_process.execFile("executable", [arg1, arg2], callback)',
@@ -95,5 +97,32 @@ export const javascriptRules = [
     remediation: 'Remove all debugger; statements before committing or deploying code.'
   }
 ];
+
+/**
+ * Helper to determine if a match index is inside a JavaScript string literal or template literal
+ * @param {string} text 
+ * @param {number} index 
+ * @returns {boolean}
+ */
+export function isInsideJsStringLiteral(text, index) {
+  if (typeof text !== 'string' || index <= 0) return false;
+
+  // 1. Check if inside unescaped backtick template literal
+  const prefix = text.slice(0, index);
+  const backtickCount = (prefix.match(/(?<!\\)`/g) || []).length;
+  if (backtickCount % 2 !== 0) return true;
+
+  // 2. Check if inside single or double quotes on current line
+  const lineStart = text.lastIndexOf('\n', index - 1) + 1;
+  let lineBefore = text.slice(lineStart, index);
+  // Strip closed template literals on this line so inner quotes don't skew counts
+  lineBefore = lineBefore.replace(/(?<!\\)`[\s\S]*?(?<!\\)`/g, '');
+  // Strip closed string literals
+  lineBefore = lineBefore.replace(/(?<!\\)'(?:\\.|[^'])*?(?<!\\)'/g, '');
+  lineBefore = lineBefore.replace(/(?<!\\)"(?:\\.|[^"])*?(?<!\\)"/g, '');
+  const doubleQuotes = (lineBefore.match(/(?<!\\)"/g) || []).length;
+  const singleQuotes = (lineBefore.match(/(?<!\\)'/g) || []).length;
+  return doubleQuotes % 2 !== 0 || singleQuotes % 2 !== 0;
+}
 
 export default javascriptRules;

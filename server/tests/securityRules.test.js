@@ -102,10 +102,22 @@ describe('Phase 9 — Step 1: Static Security Rules Suite', () => {
       assert.ok(rule.remediation.includes('parameterized queries'), 'Remediation must explain parameterized queries');
     });
 
-    it('SEC-PY-CMD-001: detects subprocess execution with shell=True in Python', () => {
+    it('SEC-PY-CMD-001: detects subprocess execution with shell=True and os.system/popen in Python', () => {
       const rule = getSecurityRuleById('SEC-PY-CMD-001');
-      const snippet = 'subprocess.Popen("ls -la " + path, shell=True)';
-      assert.match(snippet, new RegExp(rule.regex.source, rule.regex.flags));
+      const snippet1 = 'subprocess.Popen("ls -la " + path, shell=True)';
+      const snippet2 = 'os.system("rm " + cmd)';
+      const snippet3 = 'os.popen("cat " + file)';
+      const snippet4 = 'os.spawnlp(os.P_WAIT, "ls", "ls", "-l")';
+      assert.match(snippet1, new RegExp(rule.regex.source, rule.regex.flags));
+      assert.match(snippet2, new RegExp(rule.regex.source, rule.regex.flags));
+      assert.match(snippet3, new RegExp(rule.regex.source, rule.regex.flags));
+      assert.match(snippet4, new RegExp(rule.regex.source, rule.regex.flags));
+
+      if (typeof rule.matchFilter === 'function') {
+        const target = 'docstring = "os.system(rm)"';
+        const dummyMatch = { index: target.indexOf('os.system') };
+        assert.equal(rule.matchFilter(dummyMatch, target), false, 'Should filter out string literal');
+      }
     });
 
     it('SEC-PY-DES-001: detects insecure pickle deserialization in Python', () => {
@@ -169,12 +181,22 @@ describe('Phase 9 — Step 1: Static Security Rules Suite', () => {
       assert.match(snippet2, new RegExp(rule.regex.source, rule.regex.flags));
     });
 
-    it('SEC-JS-CMD-001: detects command injection via child_process.exec in JS/TS', () => {
+    it('SEC-JS-CMD-001: detects command injection via child_process.exec and require in JS/TS', () => {
       const rule = getSecurityRuleById('SEC-JS-CMD-001');
       const snippet1 = 'child_process.exec("cat " + userFile, callback);';
       const snippet2 = 'child_process.exec(`ping ${host}`, callback);';
+      const snippet3 = 'require("child_process").exec("cat " + user);';
+      const snippet4 = 'require(\'child_process\').execSync("rm -rf " + folder);';
       assert.match(snippet1, new RegExp(rule.regex.source, rule.regex.flags));
       assert.match(snippet2, new RegExp(rule.regex.source, rule.regex.flags));
+      assert.match(snippet3, new RegExp(rule.regex.source, rule.regex.flags));
+      assert.match(snippet4, new RegExp(rule.regex.source, rule.regex.flags));
+
+      if (typeof rule.matchFilter === 'function') {
+        const target = 'const doc = "require(\'child_process\').exec(\'cat \' + user)";';
+        const dummyMatch = { index: target.indexOf('require') };
+        assert.equal(rule.matchFilter(dummyMatch, target), false, 'Should filter out string literal');
+      }
     });
 
     it('SEC-JS-NOSQL-001: detects MongoDB $where evaluation in JS/TS', () => {
@@ -321,10 +343,18 @@ describe('Phase 9 — Step 1: Static Security Rules Suite', () => {
       assert.doesNotMatch(safe2, new RegExp(rule.regex.source, rule.regex.flags));
     });
 
-    it('does NOT flag safe subprocess calls without shell in Python', () => {
+    it('does NOT flag safe subprocess calls or safe os calls in Python', () => {
       const rule = getSecurityRuleById('SEC-PY-CMD-001');
-      const safe = 'subprocess.run(["ls", "-la", "/tmp"], shell=False, check=True)';
-      assert.doesNotMatch(safe, new RegExp(rule.regex.source, rule.regex.flags));
+      const safe1 = 'subprocess.run(["ls", "-la", "/tmp"], shell=False, check=True)';
+      const safe2 = 'subprocess.Popen(["ls", "-la"])';
+      const safe3 = 'os.path.join("/tmp", filename)';
+      const safe4 = 'os.environ.get("PORT")';
+      const safe5 = 'os.getcwd()';
+      assert.doesNotMatch(safe1, new RegExp(rule.regex.source, rule.regex.flags));
+      assert.doesNotMatch(safe2, new RegExp(rule.regex.source, rule.regex.flags));
+      assert.doesNotMatch(safe3, new RegExp(rule.regex.source, rule.regex.flags));
+      assert.doesNotMatch(safe4, new RegExp(rule.regex.source, rule.regex.flags));
+      assert.doesNotMatch(safe5, new RegExp(rule.regex.source, rule.regex.flags));
     });
 
     it('does NOT flag safe PyYAML safe_load in Python', () => {
@@ -343,10 +373,16 @@ describe('Phase 9 — Step 1: Static Security Rules Suite', () => {
       assert.doesNotMatch(safe2, new RegExp(rule.regex.source, rule.regex.flags));
     });
 
-    it('does NOT flag safe child_process.execFile in JS/TS', () => {
+    it('does NOT flag safe child_process calls or static exec in JS/TS', () => {
       const rule = getSecurityRuleById('SEC-JS-CMD-001');
-      const safe = 'child_process.execFile("ping", ["127.0.0.1"], callback);';
-      assert.doesNotMatch(safe, new RegExp(rule.regex.source, rule.regex.flags));
+      const safe1 = 'child_process.execFile("ping", ["127.0.0.1"], callback);';
+      const safe2 = 'child_process.spawn("ls", ["-la"]);';
+      const safe3 = 'child_process.exec("ls -la", callback);';
+      const safe4 = 'require("child_process").exec("ls -la");';
+      assert.doesNotMatch(safe1, new RegExp(rule.regex.source, rule.regex.flags));
+      assert.doesNotMatch(safe2, new RegExp(rule.regex.source, rule.regex.flags));
+      assert.doesNotMatch(safe3, new RegExp(rule.regex.source, rule.regex.flags));
+      assert.doesNotMatch(safe4, new RegExp(rule.regex.source, rule.regex.flags));
     });
 
     it('does NOT flag safe cookie options (secure: true, httpOnly: true) in JS/TS', () => {

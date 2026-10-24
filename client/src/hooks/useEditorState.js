@@ -67,8 +67,25 @@ export function useEditorState() {
   // Check for existing draft in sessionStorage
   const initialDraft = useMemo(() => readDraftFromStorage(), []);
 
+  const preferredLangId = useMemo(() => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const stored = window.localStorage.getItem('workspace_preferences');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.defaultLanguage) return parsed.defaultLanguage;
+        }
+      } catch {
+        // Fallback
+      }
+    }
+    return 'python';
+  }, []);
+
   const defaultLangConfig =
-    SUPPORTED_LANGUAGES.find((l) => l.id === 'python') || SUPPORTED_LANGUAGES[0];
+    SUPPORTED_LANGUAGES.find((l) => l.id === preferredLangId) ||
+    SUPPORTED_LANGUAGES.find((l) => l.id === 'python') ||
+    SUPPORTED_LANGUAGES[0];
 
   const initialCode = initialDraft ? initialDraft.code : defaultLangConfig.starterCode;
   const initialFileName = initialDraft ? initialDraft.fileName : defaultLangConfig.defaultFileName;

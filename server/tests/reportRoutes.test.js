@@ -25,7 +25,7 @@ import http from 'http';
 
 import app from '../src/app.js';
 import { env } from '../src/config/env.js';
-import { connectDB, disconnectDB } from '../src/config/db.js';
+import { connectDB, disconnectDB, getDBStatus } from '../src/config/db.js';
 import User from '../src/models/user.model.js';
 import CodeReview from '../src/models/review.model.js';
 import AnalysisResult from '../src/models/analysisResult.model.js';
@@ -93,6 +93,14 @@ describe('Phase 13: Audit Reports & Multi-Format Exporters', () => {
   before(async () => {
     // 1. Ensure DB connection through authoritative connectDB()
     await connectDB();
+    let dbAttempts = 0;
+    while (!getDBStatus().connected && dbAttempts < 10) {
+      dbAttempts++;
+      await new Promise((r) => setTimeout(r, 1500));
+      if (!getDBStatus().connected) {
+        await connectDB();
+      }
+    }
 
     // 2. Start HTTP server
     server = http.createServer(app);

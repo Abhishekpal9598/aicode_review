@@ -130,9 +130,9 @@ describe('Phase 7: Static Code Analysis Engine', () => {
   // =========================================================================
   // 1. RULE REGISTRY INTEGRITY
   // =========================================================================
-  test('Rule Registry: all 37 rules registered with required fields', () => {
+  test('Rule Registry: all 41 rules registered with required fields', () => {
     const rules = getAllRules();
-    assert.strictEqual(rules.length, 37, 'Expected exactly 37 registered rules');
+    assert.strictEqual(rules.length, 41, 'Expected exactly 41 registered rules');
 
     for (const rule of rules) {
       assert.ok(rule.ruleId, 'Rule must have ruleId');
@@ -252,6 +252,43 @@ describe('Phase 7: Static Code Analysis Engine', () => {
     assert.ok(ruleIds.includes('QUAL-PY-002'), 'Must detect mutable default argument');
   });
 
+  test('Language Rules: Python (os.system and os.popen detection)', () => {
+    const code = [
+      'import os',
+      'def run_cmd(user_input):',
+      '    os.system("rm -rf " + user_input)',
+      '    pipe = os.popen("cat " + user_input)'
+    ].join('\n');
+
+    const result = analyzeCode(code, 'python');
+    const ruleIds = result.findings.map((f) => f.ruleId);
+
+    assert.ok(ruleIds.includes('RISK-PY-003'), 'Must detect os.system under RISK-PY-003');
+    assert.ok(ruleIds.includes('SEC-PY-CMD-001'), 'Must detect os.system under SEC-PY-CMD-001');
+    const cmdFindings = result.findings.filter((f) => f.ruleId === 'RISK-PY-003');
+    assert.equal(cmdFindings.length, 2, 'Must detect both os.system and os.popen');
+  });
+
+  test('Language Rules: Python string literal, docstring, and comment immunity', () => {
+    const code = [
+      '# os.system("rm -rf /")',
+      '# subprocess.run("cmd", shell=True)',
+      '"""',
+      'os.system("rm -rf /")',
+      'subprocess.run("test", shell=True)',
+      '"""',
+      'def info():',
+      '    msg = "Use os.system or subprocess.run shell=True with care"',
+      '    return os.path.join("/tmp", "safe.txt")'
+    ].join('\n');
+
+    const result = analyzeCode(code, 'python');
+    const cmdFindings = result.findings.filter(
+      (f) => f.ruleId === 'RISK-PY-003' || f.ruleId === 'SEC-PY-CMD-001'
+    );
+    assert.equal(cmdFindings.length, 0, 'Must NOT flag comments, docstrings, or string literals');
+  });
+
   test('Language Rules: JavaScript (eval, innerHTML, child_process.exec, secure:false cookie, empty catch, loose equality, debugger)', () => {
     const code = [
       'try {',
@@ -274,6 +311,44 @@ describe('Phase 7: Static Code Analysis Engine', () => {
     assert.ok(ruleIds.includes('QUAL-JS-001'), 'Must detect empty catch');
     assert.ok(ruleIds.includes('QUAL-JS-002'), 'Must detect loose equality ==');
     assert.ok(ruleIds.includes('QUAL-JS-003'), 'Must detect active debugger statement');
+  });
+
+  test('Language Rules: JavaScript (require("child_process").exec and execSync detection)', () => {
+    const code = [
+      'function run(user) {',
+      '  require("child_process").exec("cat " + user);',
+      '  require(\'child_process\').execSync(`rm -rf ${user}`);',
+      '}'
+    ].join('\n');
+
+    const result = analyzeCode(code, 'javascript');
+    const ruleIds = result.findings.map((f) => f.ruleId);
+
+    assert.ok(ruleIds.includes('RISK-JS-003'), 'Must detect require("child_process").exec under RISK-JS-003');
+    assert.ok(ruleIds.includes('SEC-JS-CMD-001'), 'Must detect require("child_process").exec under SEC-JS-CMD-001');
+    const cmdFindings = result.findings.filter((f) => f.ruleId === 'RISK-JS-003');
+    assert.equal(cmdFindings.length, 2, 'Must detect both exec and execSync');
+  });
+
+  test('Language Rules: JavaScript string literal and comment immunity for command injection', () => {
+    const code = [
+      '// require("child_process").exec("cat " + user);',
+      '/* child_process.exec("cat " + user); */',
+      'const msg = "require(\'child_process\').exec(\'cat \' + user)";',
+      'const msg2 = \'child_process.exec("cat " + user)\';',
+      'const msg3 = `require("child_process").exec("cat " + user)`;',
+      'function safe() {',
+      '  child_process.execFile("ping", ["127.0.0.1"]);',
+      '  child_process.spawn("ls", ["-la"]);',
+      '  child_process.exec("ls -la", callback);',
+      '}'
+    ].join('\n');
+
+    const result = analyzeCode(code, 'javascript');
+    const cmdFindings = result.findings.filter(
+      (f) => f.ruleId === 'RISK-JS-003' || f.ruleId === 'SEC-JS-CMD-001'
+    );
+    assert.equal(cmdFindings.length, 0, 'Must NOT flag comments, strings, or safe child_process methods');
   });
 
   test('Language Rules: TypeScript (eval, dangerouslySetInnerHTML, any, empty catch)', () => {
@@ -350,6 +425,92 @@ describe('Phase 7: Static Code Analysis Engine', () => {
     assert.ok(ruleIds.includes('RISK-CPP-003'), 'Must detect sprintf in C++');
     assert.ok(ruleIds.includes('QUAL-CPP-001'), 'Must detect C-style cast');
     assert.ok(ruleIds.includes('QUAL-CPP-002'), 'Must detect catch (...)');
+  });
+
+  test('Language Rules: C++ (division by zero, array out of bounds, uninitialized variable, infinite loop)', () => {
+    const code = [
+      'int divide(int a, int b) {',
+      '    return a / b;',
+      '}',
+      'void testArray() {',
+      '    int arr[5] = {10, 20, 30, 40, 50};',
+      '    cout << arr[10];',
+      '}',
+      'void testUninit() {',
+      '    int result;',
+      '    cout << result;',
+      '}',
+      'void testLoop() {',
+      '    while (true) {',
+      '        cout << "Running..." << endl;',
+      '    }',
+      '}'
+    ].join('\n');
+
+    const result = analyzeCode(code, 'cpp');
+    const ruleIds = result.findings.map((f) => f.ruleId);
+
+    assert.ok(ruleIds.includes('RISK-CPP-004'), 'Must detect potential division by zero (RISK-CPP-004)');
+    assert.ok(ruleIds.includes('RISK-CPP-005'), 'Must detect array index out of bounds (RISK-CPP-005)');
+    assert.ok(ruleIds.includes('RISK-CPP-006'), 'Must detect uninitialized variable read (RISK-CPP-006)');
+    assert.ok(ruleIds.includes('QUAL-CPP-003'), 'Must detect unconditional infinite loop (QUAL-CPP-003)');
+
+    const aobFinding = result.findings.find((f) => f.ruleId === 'RISK-CPP-005');
+    assert.strictEqual(aobFinding.severity, 'CRITICAL', 'Array out of bounds must be CRITICAL');
+    assert.strictEqual(aobFinding.cwe, 'CWE-125');
+
+    const divFinding = result.findings.find((f) => f.ruleId === 'RISK-CPP-004');
+    assert.strictEqual(divFinding.severity, 'HIGH', 'Division by zero must be HIGH');
+    assert.strictEqual(divFinding.cwe, 'CWE-369');
+  });
+
+  test('Language Rules: C++ Negative Tests (safe code must not trigger false positives)', () => {
+    const safeCode = [
+      'int safeDivide(int a, int b) {',
+      '    if (b == 0) return 0;',
+      '    return a / b;',
+      '}',
+      'void safeArray() {',
+      '    int arr[5] = {10, 20, 30, 40, 50};',
+      '    cout << arr[2];',
+      '}',
+      'void safeUninit() {',
+      '    int result = 42;',
+      '    cout << result;',
+      '}',
+      'void safeLoop() {',
+      '    while (true) {',
+      '        if (check()) break;',
+      '    }',
+      '}'
+    ].join('\n');
+
+    const result = analyzeCode(safeCode, 'cpp');
+    const relevantRuleIds = ['RISK-CPP-004', 'RISK-CPP-005', 'RISK-CPP-006', 'QUAL-CPP-003'];
+    const falseFindings = result.findings.filter((f) => relevantRuleIds.includes(f.ruleId));
+
+    assert.strictEqual(falseFindings.length, 0, `Expected 0 false findings on safe C++ code, got: ${JSON.stringify(falseFindings)}`);
+    assert.strictEqual(result.scoring.overallScore, 100, 'Safe code must maintain 100 score');
+  });
+
+  test('Language Rules: C++ (comments and string literals do not trigger false findings)', () => {
+    const commentAndStringCode = [
+      '// return a / b;',
+      '// int arr[5]; cout << arr[10];',
+      '/* int result; cout << result; */',
+      '/* while (true) {} */',
+      'void testStrings() {',
+      '    std::string s1 = "return a / b;";',
+      '    std::string s2 = "while (true) { cout << 1; }";',
+      '    std::string s3 = "int arr[5]; cout << arr[10];";',
+      '}'
+    ].join('\n');
+
+    const result = analyzeCode(commentAndStringCode, 'cpp');
+    const relevantRuleIds = ['RISK-CPP-004', 'RISK-CPP-005', 'RISK-CPP-006', 'QUAL-CPP-003'];
+    const falseFindings = result.findings.filter((f) => relevantRuleIds.includes(f.ruleId));
+
+    assert.strictEqual(falseFindings.length, 0, 'Comments and strings must not trigger C++ static findings');
   });
 
   // =========================================================================

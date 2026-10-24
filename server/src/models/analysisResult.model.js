@@ -62,6 +62,19 @@ const analysisResultSchema = new mongoose.Schema(
       type: Boolean,
       required: [true, 'aiAvailable flag is required']
     },
+    aiModelUsed: {
+      type: String,
+      default: null,
+      maxlength: [100, 'aiModelUsed cannot exceed 100 characters']
+    },
+    aiModelTier: {
+      type: String,
+      enum: {
+        values: ['primary', 'fallback', 'static-fallback', null],
+        message: 'aiModelTier must be primary, fallback, static-fallback, or null'
+      },
+      default: null
+    },
     summary: {
       type: String,
       required: [true, 'Analysis summary is required'],

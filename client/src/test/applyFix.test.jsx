@@ -571,4 +571,74 @@ line5`;
       expect(screen.getByTestId('badge-applied-507f1f77bcf86cd799439099')).toBeInTheDocument();
     });
   });
+
+  // TEST 9: Indentation Preservation on Fix Application
+  it('Test 9 (Indentation Preservation): preserves original indentation when applying unindented snippet', async () => {
+    const initialCode = [
+      '#include <stdio.h>',
+      'void login() {',
+      '    char password[64];',
+      '    gets(password);',
+      '    authenticate(password);',
+      '}'
+    ].join('\n');
+
+    apiClient.analyzeCode.mockResolvedValueOnce({
+      success: true,
+      data: {
+        scoring: { overallScore: 75, grade: 'B' },
+        metrics: { totalLines: 6, severityCounts: { critical: 1 } },
+        findings: [
+          {
+            id: 'c-gets-finding',
+            ruleId: 'RISK-C-002',
+            title: 'Obsolete Insecure Input Function (gets)',
+            severity: 'CRITICAL',
+            lineStart: 4,
+            lineEnd: 4,
+            originalSnippet: '    gets(password);',
+            suggestedSnippet: 'fgets(password, sizeof(password), stdin);' // unindented snippet
+          }
+        ]
+      }
+    });
+
+    render(
+      <MemoryRouter>
+        <CodeReview />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('monaco-editor-textarea')).toBeInTheDocument();
+    });
+
+    const textarea = screen.getByTestId('monaco-editor-textarea');
+    fireEvent.change(textarea, { target: { value: initialCode } });
+
+    const analyzeBtn = screen.getByLabelText(/Analyze code/i);
+    fireEvent.click(analyzeBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('finding-card-c-gets-finding')).toBeInTheDocument();
+    });
+
+    // Apply the fix
+    fireEvent.click(screen.getByTestId('apply-fix-btn-c-gets-finding'));
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('confirm-apply-fix-button'));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    // Verify line 4 in updated editor preserves the 4 spaces of indentation
+    const lines = textarea.value.split('\n');
+    expect(lines[3]).toBe('    fgets(password, sizeof(password), stdin);');
+    expect(lines[1]).toBe('void login() {');
+    expect(lines[2]).toBe('    char password[64];');
+    expect(lines[4]).toBe('    authenticate(password);');
+  });
 });

@@ -178,6 +178,8 @@ export async function executeReview({ code, language, title, fileName, sourceTyp
   let suggestedCode;
   let refactoringRationale;
   let finalIssues = [];
+  let aiModelUsed = null;
+  let aiModelTier = 'static-fallback';
 
   if (geminiResult) {
     // -------------------------------------------------------------------------
@@ -186,6 +188,8 @@ export async function executeReview({ code, language, title, fileName, sourceTyp
     reviewMode = 'hybrid';
     aiAvailable = true;
     complexityType = 'ai-assisted';
+    aiModelUsed = geminiResult.aiModelUsed || null;
+    aiModelTier = geminiResult.aiModelTier || geminiResult.modelTier || 'primary';
 
     // Step 1: AI Composite Score
     const aiCompositeScore = geminiResult.aiCompositeScore;
@@ -295,6 +299,8 @@ export async function executeReview({ code, language, title, fileName, sourceTyp
     fileSizeBytes,
     status: 'completed',
     reviewMode,
+    aiModelUsed,
+    aiModelTier,
     staticScore,
     errorMessage: aiError ? aiError.message : null
   };
@@ -306,6 +312,8 @@ export async function executeReview({ code, language, title, fileName, sourceTyp
     grade,
     staticScore,
     aiAvailable,
+    aiModelUsed,
+    aiModelTier,
     summary,
     metrics,
     timeComplexity,
@@ -402,18 +410,18 @@ export async function getReviewById(reviewId, userId) {
   const safeReviewId = new mongoose.Types.ObjectId(reviewId);
   const safeUserId = new mongoose.Types.ObjectId(userId);
 
-  // Strict tenant-scoped lookup
-  const review = await CodeReview.findOne({ _id: safeReviewId, userId: safeUserId }).lean();
-  if (!review) {
-    return null;
-  }
-
-  const [analysis, issues] = await Promise.all([
+  // Parallel tenant-scoped queries
+  const [review, analysis, issues] = await Promise.all([
+    CodeReview.findOne({ _id: safeReviewId, userId: safeUserId }).lean(),
     AnalysisResult.findOne({ reviewId: safeReviewId, userId: safeUserId }).lean(),
     ReviewIssue.find({ reviewId: safeReviewId, userId: safeUserId })
       .sort({ lineStart: 1, severity: 1 })
       .lean()
   ]);
+
+  if (!review) {
+    return null;
+  }
 
   return {
     review,
@@ -524,17 +532,16 @@ export async function getSecurityReview(reviewId, userId, query = {}) {
   const safeReviewId = new mongoose.Types.ObjectId(reviewId);
   const safeUserId = new mongoose.Types.ObjectId(userId);
 
-  // 1. Strict tenant-scoped review lookup
-  const review = await CodeReview.findOne({ _id: safeReviewId, userId: safeUserId }).lean();
-  if (!review) {
-    return null;
-  }
-
-  // 2. Fetch analysis result and security category issues
-  const [analysis, rawIssues] = await Promise.all([
+  // 1. Fetch review, analysis result, and security issues concurrently
+  const [review, analysis, rawIssues] = await Promise.all([
+    CodeReview.findOne({ _id: safeReviewId, userId: safeUserId }).lean(),
     AnalysisResult.findOne({ reviewId: safeReviewId, userId: safeUserId }).lean(),
     ReviewIssue.find({ reviewId: safeReviewId, userId: safeUserId, category: 'security' }).lean()
   ]);
+
+  if (!review) {
+    return null;
+  }
 
   // 3. Derive security score and grade using authoritative gradeForScore
   let securityScore = null;
@@ -722,17 +729,16 @@ export async function getPerformanceReview(reviewId, userId, query = {}) {
   const safeUserId = new mongoose.Types.ObjectId(userId);
   const safeReviewId = new mongoose.Types.ObjectId(reviewId);
 
-  // 1. Fetch parent review with tenant isolation
-  const review = await CodeReview.findOne({ _id: safeReviewId, userId: safeUserId }).lean();
-  if (!review) {
-    return null;
-  }
-
-  // 2. Fetch analysis result and performance category issues
-  const [analysis, rawIssues] = await Promise.all([
+  // 1. Fetch review, analysis result, and performance issues concurrently
+  const [review, analysis, rawIssues] = await Promise.all([
+    CodeReview.findOne({ _id: safeReviewId, userId: safeUserId }).lean(),
     AnalysisResult.findOne({ reviewId: safeReviewId, userId: safeUserId }).lean(),
     ReviewIssue.find({ reviewId: safeReviewId, userId: safeUserId, category: 'performance' }).lean()
   ]);
+
+  if (!review) {
+    return null;
+  }
 
   // 3. Fallback evaluation if review was generated prior to Phase 10 or issues empty
   let evaluated = null;

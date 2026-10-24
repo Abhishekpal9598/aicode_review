@@ -29,7 +29,7 @@ export const authLimiter = rateLimit({
  */
 export const staticAnalysisLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 30, // 30 requests per minute
+  max: () => (process.env.STATIC_ANALYSIS_RATE_LIMIT_MAX ? parseInt(process.env.STATIC_ANALYSIS_RATE_LIMIT_MAX, 10) : 30),
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res, next) => {
@@ -48,7 +48,7 @@ export const staticAnalysisLimiter = rateLimit({
  */
 export const reviewLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 10, // 10 requests per minute
+  max: () => (process.env.REVIEW_RATE_LIMIT_MAX ? parseInt(process.env.REVIEW_RATE_LIMIT_MAX, 10) : 10),
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res, next) => {

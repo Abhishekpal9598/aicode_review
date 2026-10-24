@@ -72,6 +72,10 @@ export function MonacoEditorWrapper({
 
   const handleEditorMount = useCallback((editorInstance, monacoInstance) => {
     try {
+      if (typeof window !== 'undefined') {
+        window.__monacoEditor = editorInstance;
+        window.__monaco = monacoInstance;
+      }
       monacoInstance.editor.setTheme(CYBERNETIC_THEME_NAME);
       if (onMount) {
         onMount(editorInstance, monacoInstance);
@@ -90,7 +94,18 @@ export function MonacoEditorWrapper({
     [onChange]
   );
 
-  const tabSize = language === 'python' || language === 'java' ? 4 : 2;
+  const storedPreferences = React.useMemo(() => {
+    if (typeof window === 'undefined' || !window.localStorage) return null;
+    try {
+      const raw = window.localStorage.getItem('workspace_preferences');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const fontSize = storedPreferences?.fontSize || 14;
+  const tabSize = storedPreferences?.tabSize || (language === 'python' || language === 'java' ? 4 : 2);
 
   if (loadError) {
     return (
@@ -122,7 +137,7 @@ export function MonacoEditorWrapper({
         onChange={handleEditorChange}
         loading={<EditorLoadingState />}
         options={{
-          fontSize: 14,
+          fontSize: fontSize,
           fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
           fontLigatures: true,
           lineHeight: 22,

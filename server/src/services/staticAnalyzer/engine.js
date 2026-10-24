@@ -57,6 +57,14 @@ export function analyze(code, language, options = {}) {
 
     let match;
     while ((match = regex.exec(targetText)) !== null) {
+      // Backward-compatible match filter hook (e.g. contextual bounds or guard validation)
+      if (typeof rule.matchFilter === 'function' && !rule.matchFilter(match, targetText)) {
+        if (match.index === regex.lastIndex) {
+          regex.lastIndex++;
+        }
+        continue;
+      }
+
       const startIndex = match.index;
       const matchedText = match[0];
       const endIndex = startIndex + matchedText.length;

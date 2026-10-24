@@ -66,8 +66,12 @@ export function formatMarkdownReport(exportData) {
   let md = `# AI Code Review — Audit & Security Inspection Report\n\n`;
 
   // Metadata blockquote
+  const engineDetails = review.reviewMode === 'hybrid'
+    ? `Hybrid Mode (${review.aiModelTier === 'fallback' ? 'Fallback' : 'Primary'} Model: \`${review.aiModelUsed || 'Gemini'}\`)`
+    : 'Deterministic Static Fallback Mode';
   md += `> **Target File:** \`${review.filename}\` (\`${review.language}\`)  \n`;
   md += `> **Review ID:** \`${review.id}\`  \n`;
+  md += `> **Engine Mode:** ${engineDetails}  \n`;
   md += `> **Audit Executed:** ${dateStr}  \n`;
   md += `> **Report Exported:** ${exportDateStr}  \n`;
   md += `> **Overall Quality:** **Grade ${qualityScore.grade}** (${qualityScore.overall} / 100)  \n\n`;
@@ -352,6 +356,9 @@ export async function generateReviewExport(reviewId, userId, format = 'json') {
       filename: review.filename || review.fileName || 'snippet',
       language,
       lineCount: review.lineCount || 0,
+      reviewMode: review.reviewMode || 'hybrid',
+      aiModelUsed: review.aiModelUsed || null,
+      aiModelTier: review.aiModelTier || null,
       createdAt: review.createdAt
     },
     qualityScore: {

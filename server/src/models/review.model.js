@@ -65,6 +65,19 @@ const codeReviewSchema = new mongoose.Schema(
       enum: ['hybrid', 'static-fallback'],
       default: 'hybrid'
     },
+    aiModelUsed: {
+      type: String,
+      default: null,
+      maxlength: [100, 'aiModelUsed cannot exceed 100 characters']
+    },
+    aiModelTier: {
+      type: String,
+      enum: {
+        values: ['primary', 'fallback', 'static-fallback', null],
+        message: 'aiModelTier must be primary, fallback, static-fallback, or null'
+      },
+      default: null
+    },
     staticScore: {
       type: Number,
       min: [0, 'Static score cannot be less than 0'],

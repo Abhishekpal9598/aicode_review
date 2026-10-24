@@ -26,20 +26,24 @@ import {
 
 describe('Phase 9 — Step 2: Unified Rule Registry & Engine Integration', () => {
   describe('1. Registry Public API & Rule Counts', () => {
-    it('legacy getAllRules() must return exactly 37 base Phase 7 rules', () => {
+    it('legacy getAllRules() must return exactly 41 base rules', () => {
       const baseRules = getAllRules();
-      assert.equal(baseRules.length, 37, 'getAllRules() must strictly preserve the 37 base rules contract');
+      assert.equal(baseRules.length, 41, 'getAllRules() must strictly preserve the 41 base rules contract (including 9 C++ rules)');
       
       // Ensure only Phase 7 and universal secret rule IDs are present
       assert.ok(baseRules.some((r) => r.ruleId === 'SEC-GEN-001'));
       assert.ok(baseRules.some((r) => r.ruleId === 'RISK-PY-001'));
       assert.ok(baseRules.some((r) => r.ruleId === 'QUAL-JS-001'));
+      assert.ok(baseRules.some((r) => r.ruleId === 'RISK-CPP-004'), 'Must include RISK-CPP-004');
+      assert.ok(baseRules.some((r) => r.ruleId === 'RISK-CPP-005'), 'Must include RISK-CPP-005');
+      assert.ok(baseRules.some((r) => r.ruleId === 'RISK-CPP-006'), 'Must include RISK-CPP-006');
+      assert.ok(baseRules.some((r) => r.ruleId === 'QUAL-CPP-003'), 'Must include QUAL-CPP-003');
       assert.ok(!baseRules.some((r) => r.ruleId === 'SEC-PY-SQL-001'), 'getAllRules() must not include Phase 9 domain rules');
     });
 
-    it('getAllRegisteredRules() must return all 80 unified rules (37 base + 43 security)', () => {
+    it('getAllRegisteredRules() must return all 84 unified rules (41 base + 43 security)', () => {
       const allRules = getAllRegisteredRules();
-      assert.equal(allRules.length, 80, 'getAllRegisteredRules() must return exactly 80 unified rules');
+      assert.equal(allRules.length, 84, 'getAllRegisteredRules() must return exactly 84 unified rules');
       
       // Verify presence of both Phase 7 and Phase 9 rules
       assert.ok(allRules.some((r) => r.ruleId === 'SEC-GEN-001'), 'Must include universal secrets');
@@ -48,7 +52,7 @@ describe('Phase 9 — Step 2: Unified Rule Registry & Engine Integration', () =>
       assert.ok(allRules.some((r) => r.ruleId === 'SEC-JS-SSRF-001'), 'Must include Phase 9 security rules');
     });
 
-    it('all 80 rule IDs must be globally unique with zero collisions', () => {
+    it('all 84 rule IDs must be globally unique with zero collisions', () => {
       const allRules = getAllRegisteredRules();
       const idSet = new Set();
       const duplicates = [];
@@ -61,7 +65,7 @@ describe('Phase 9 — Step 2: Unified Rule Registry & Engine Integration', () =>
       }
 
       assert.equal(duplicates.length, 0, `Detected duplicate ruleIds: ${duplicates.join(', ')}`);
-      assert.equal(idSet.size, 80, 'Must have exactly 80 unique rule IDs');
+      assert.equal(idSet.size, 84, 'Must have exactly 84 unique rule IDs');
     });
 
     it('getRulesForLanguage() must return exact expected rule counts per language', () => {
@@ -85,9 +89,9 @@ describe('Phase 9 — Step 2: Unified Rule Registry & Engine Integration', () =>
       const cRules = getRulesForLanguage('c');
       assert.equal(cRules.length, 16, `Expected 16 C rules, received ${cRules.length}`);
 
-      // C++: 5 (secrets) + 5 (Phase 7) + 4 (Security) = 14
+      // C++: 5 (secrets) + 9 (base) + 4 (Security) = 18
       const cppRules = getRulesForLanguage('cpp');
-      assert.equal(cppRules.length, 14, `Expected 14 C++ rules, received ${cppRules.length}`);
+      assert.equal(cppRules.length, 18, `Expected 18 C++ rules, received ${cppRules.length}`);
     });
 
     it('unsupported language returns only the 5 universal secret rules', () => {

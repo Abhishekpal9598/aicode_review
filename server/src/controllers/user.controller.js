@@ -22,23 +22,53 @@ export const getUserStats = asyncHandler(async (req, res) => {
 
   const userId = req.user._id;
 
-  // 2. Query total reviews belonging strictly to the authenticated user
-  const totalReviews = await CodeReview.countDocuments({ userId });
+  // 2. Query total reviews and recent reviews concurrently
+  const [totalReviews, recentReviews] = await Promise.all([
+    CodeReview.countDocuments({ userId }),
+    CodeReview.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select('title language lineCount status createdAt')
+  ]);
 
-  // 3. Query recent reviews selecting ONLY genuine CodeReview database fields
-  const recentReviews = await CodeReview.find({ userId })
-    .sort({ createdAt: -1 })
-    .limit(5)
-    .select('title language lineCount status createdAt');
-
-  // 4. Calibrate performance bottlenecks in Phase 10 when reviews exist
+  // 3. Calculate genuine user telemetry when reviews exist
   let performanceBottlenecks = null;
+  let criticalSecurityIssues = null;
+  let averageQualityScore = null;
+  let languageDistribution = [];
+
   if (totalReviews > 0) {
-    performanceBottlenecks = await ReviewIssue.countDocuments({
-      userId,
-      category: 'performance',
-      severity: { $in: ['CRITICAL', 'HIGH'] }
-    });
+    const [perfCount, secCount, avgResult, langStats] = await Promise.all([
+      ReviewIssue.countDocuments({
+        userId,
+        category: 'performance',
+        severity: { $in: ['CRITICAL', 'HIGH'] }
+      }),
+      ReviewIssue.countDocuments({
+        userId,
+        category: 'security',
+        severity: { $in: ['CRITICAL', 'HIGH'] }
+      }),
+      CodeReview.aggregate([
+        { $match: { userId, staticScore: { $ne: null } } },
+        { $group: { _id: null, avgScore: { $avg: '$staticScore' } } }
+      ]),
+      CodeReview.aggregate([
+        { $match: { userId } },
+        { $group: { _id: '$language', count: { $sum: 1 } } },
+        { $project: { _id: 0, language: '$_id', count: 1 } },
+        { $sort: { count: -1 } }
+      ])
+    ]);
+
+    performanceBottlenecks = perfCount;
+    criticalSecurityIssues = secCount;
+
+    if (avgResult.length > 0 && typeof avgResult[0].avgScore === 'number') {
+      averageQualityScore = Math.round(avgResult[0].avgScore);
+    }
+
+    languageDistribution = langStats;
   }
 
   // 5. Return standardized envelope matching ApiResponse.js
@@ -47,12 +77,12 @@ export const getUserStats = asyncHandler(async (req, res) => {
     {
       overview: {
         totalReviews,
-        averageQualityScore: null,     // Calibrates in Phase 8
-        criticalSecurityIssues: null, // Calibrates in Phase 7 & 9
+        averageQualityScore,
+        criticalSecurityIssues,
         performanceBottlenecks
       },
       scoreHistory: [],
-      languageDistribution: [],
+      languageDistribution,
       recentReviews
     },
     'User statistics retrieved successfully.'

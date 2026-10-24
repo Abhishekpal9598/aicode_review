@@ -101,19 +101,41 @@ export function classifyGeminiError(err, abortController, timeoutMs = 30000) {
     };
   }
 
-  const status = err.status || err.statusCode || (err.response && err.response.status);
+  let parsedCode = null;
+  let parsedStatus = null;
   const msg = err.message || '';
+  if (typeof msg === 'string' && msg.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(msg);
+      if (parsed?.error?.code) parsedCode = parsed.error.code;
+      if (parsed?.error?.status) parsedStatus = parsed.error.status;
+    } catch {}
+  }
 
-  // HTTP 429: Rate limit exceeded (do not retry)
-  if (status === 429 || /rate limit|resource_exhausted|quota/i.test(msg)) {
+  const status = err.status || err.statusCode || (err.response && err.response.status) || parsedCode;
+
+  // HTTP 429: Rate limit exceeded (do not retry on same model)
+  if (status === 429 || parsedStatus === 'RESOURCE_EXHAUSTED' || /rate limit|resource_exhausted|quota/i.test(msg)) {
     return {
       isRetryable: false,
       error: new GeminiServiceError('Gemini API rate limit exceeded', 'AI_RATE_LIMITED', 429)
     };
   }
 
+  // HTTP 404: Model Not Found / Unsupported Model identifier
+  if (status === 404 || parsedStatus === 'NOT_FOUND' || /not found|is not supported|no longer available/i.test(msg)) {
+    return {
+      isRetryable: false,
+      error: new GeminiServiceError(
+        `Gemini model not found or unsupported: ${sanitizeErrorMessage(msg)}`,
+        'AI_INVALID_MODEL',
+        404
+      )
+    };
+  }
+
   // HTTP 401: Unauthorized / Invalid API key
-  if (status === 401 || /api key|unauthorized|unauthenticated/i.test(msg)) {
+  if (status === 401 || parsedStatus === 'UNAUTHENTICATED' || /api key|unauthorized|unauthenticated/i.test(msg)) {
     return {
       isRetryable: false,
       error: new GeminiServiceError('Gemini API authentication failed', 'AI_REQUEST_FAILED', 401)
@@ -121,7 +143,7 @@ export function classifyGeminiError(err, abortController, timeoutMs = 30000) {
   }
 
   // HTTP 403: Forbidden / Access denied
-  if (status === 403 || /forbidden|permission_denied/i.test(msg)) {
+  if (status === 403 || parsedStatus === 'PERMISSION_DENIED' || /forbidden|permission_denied/i.test(msg)) {
     return {
       isRetryable: false,
       error: new GeminiServiceError('Gemini API access forbidden', 'AI_REQUEST_FAILED', 403)
@@ -129,7 +151,7 @@ export function classifyGeminiError(err, abortController, timeoutMs = 30000) {
   }
 
   // HTTP 400: Bad Request
-  if (status === 400 || /invalid_argument|bad request/i.test(msg)) {
+  if (status === 400 || parsedStatus === 'INVALID_ARGUMENT' || /invalid_argument|bad request/i.test(msg)) {
     return {
       isRetryable: false,
       error: new GeminiServiceError('Invalid request parameters for Gemini API', 'AI_REQUEST_FAILED', 400)
@@ -137,7 +159,7 @@ export function classifyGeminiError(err, abortController, timeoutMs = 30000) {
   }
 
   // HTTP 503: Service Unavailable (Retryable)
-  if (status === 503 || /unavailable|service unavailable|overloaded/i.test(msg)) {
+  if (status === 503 || parsedStatus === 'UNAVAILABLE' || /unavailable|service unavailable|overloaded|high demand/i.test(msg)) {
     return {
       isRetryable: true,
       error: new GeminiServiceError('Gemini service temporarily unavailable', 'AI_PROVIDER_UNAVAILABLE', 503)
@@ -237,7 +259,9 @@ export class GeminiService {
    * @param {object} [config={}] - Service configuration
    * @param {object} [config.client] - Injected GoogleGenAI client (for testing)
    * @param {string} [config.apiKey] - Explicit API key (defaults to env.GEMINI_API_KEY)
-   * @param {string} [config.model] - Model name (defaults to env.GEMINI_MODEL)
+   * @param {string} [config.model] - Primary model name (defaults to env.GEMINI_MODEL)
+   * @param {string} [config.primaryModel] - Explicit primary model name
+   * @param {string} [config.fallbackModel] - Explicit fallback model name (defaults to env.GEMINI_FALLBACK_MODEL)
    * @param {number} [config.timeoutMs] - Timeout in ms (defaults to env.GEMINI_TIMEOUT_MS)
    * @param {number} [config.maxRetries=2] - Maximum retry attempts for transient errors
    * @param {number} [config.retryDelayMs=1000] - Base delay for exponential backoff in ms
@@ -245,19 +269,24 @@ export class GeminiService {
   constructor(config = {}) {
     this.client = config.client || null;
     this.apiKey = 'apiKey' in config ? config.apiKey : env.GEMINI_API_KEY;
-    this.model = config.model || env.GEMINI_MODEL || 'gemini-2.5-flash';
+    this.primaryModel = config.primaryModel || config.model || env.GEMINI_MODEL || 'gemini-3.5-flash';
+    this.model = this.primaryModel; // Backward-compatible alias
+    this.fallbackModelExplicit = 'fallbackModel' in config;
+    this.fallbackModel = this.fallbackModelExplicit
+      ? config.fallbackModel
+      : (config.client ? null : (env.GEMINI_FALLBACK_MODEL || 'gemini-3.8-flash'));
     this.timeoutMs = config.timeoutMs !== undefined ? config.timeoutMs : (env.GEMINI_TIMEOUT_MS || 30000);
     this.maxRetries = config.maxRetries !== undefined ? config.maxRetries : 2;
     this.retryDelayMs = config.retryDelayMs !== undefined ? config.retryDelayMs : 1000;
   }
 
   /**
-   * Executes AI code review via Google Gemini with complete redaction and validation.
+   * Executes AI code review via Google Gemini with complete redaction, validation, and multi-model fallback.
    *
    * @param {string} code - Untrusted raw source code
    * @param {string} language - Programming language identifier
    * @param {object} [options={}] - Per-request options overrides
-   * @returns {Promise<object>} Normalized, trusted AI review result
+   * @returns {Promise<object>} Normalized, trusted AI review result with aiModelUsed and aiModelTier
    */
   async analyze(code, language, options = {}) {
     // 1. Language validation
@@ -291,17 +320,101 @@ export class GeminiService {
       client = new GoogleGenAI({ apiKey });
     }
 
-    // 5. Prompt construction with unique boundary token
-    const boundaryToken = crypto.randomBytes(16).toString('hex');
-    const { systemInstruction, contents } = buildGeminiPrompt(redactedCode, safeLang, boundaryToken);
+    // 5. Model resolution
+    const primaryModel = options.primaryModel || options.model || this.primaryModel;
+    const fallbackModel = 'fallbackModel' in options
+      ? options.fallbackModel
+      : (options.client || this.client ? (this.fallbackModelExplicit ? this.fallbackModel : null) : this.fallbackModel);
 
-    const modelName = options.model || this.model;
+    // Build ordered list of candidate models to attempt (primary -> fallback)
+    const candidateModels = [{ model: primaryModel, tier: 'primary' }];
+    if (fallbackModel && typeof fallbackModel === 'string' && fallbackModel.trim().length > 0 && fallbackModel.trim() !== primaryModel) {
+      candidateModels.push({ model: fallbackModel.trim(), tier: 'fallback' });
+    }
+
     const timeoutMs = options.timeoutMs !== undefined ? options.timeoutMs : this.timeoutMs;
     const maxRetries = options.maxRetries !== undefined ? options.maxRetries : this.maxRetries;
     const retryDelayMs = options.retryDelayMs !== undefined ? options.retryDelayMs : this.retryDelayMs;
 
+    let lastError = null;
+
+    for (let modelIndex = 0; modelIndex < candidateModels.length; modelIndex++) {
+      const { model: currentModel, tier: currentTier } = candidateModels[modelIndex];
+      const hasFallbackRemaining = modelIndex < candidateModels.length - 1;
+
+      try {
+        const result = await this._executeModelWithRetries({
+          client,
+          modelName: currentModel,
+          redactedCode,
+          safeCode,
+          safeLang,
+          timeoutMs,
+          maxRetries,
+          retryDelayMs,
+          coordinateMapper,
+          redactedSecretsCount
+        });
+
+        // Tag result with model and tier used
+        return {
+          ...result,
+          aiModelUsed: currentModel,
+          aiModelTier: currentTier,
+          modelTier: currentTier // Backward compatibility alias
+        };
+      } catch (err) {
+        lastError = err;
+
+        // Check if error is eligible for model fallback:
+        // Eligible: HTTP 429 (Rate limited / Quota exhausted) OR HTTP 503 (Provider unavailable after retries)
+        const isEligibleForFallback = (
+          err.code === 'AI_RATE_LIMITED' ||
+          err.statusCode === 429 ||
+          err.code === 'AI_PROVIDER_UNAVAILABLE' ||
+          err.statusCode === 503
+        );
+
+        // If not eligible for fallback (401 Auth, 403 Forbidden, 400 Bad Request, 504 Timeout, 502 Malformed/Invalid)
+        // or if no fallback model remains, log and rethrow immediately (fails fast, zero retry loop)
+        if (!isEligibleForFallback || !hasFallbackRemaining) {
+          logger.error(`Gemini service failure on [${currentModel}] (${currentTier}) [${err.code}]: ${err.message}`);
+          throw err;
+        }
+
+        const nextModel = candidateModels[modelIndex + 1].model;
+        logger.warn(
+          `Primary Gemini model [${currentModel}] unavailable (${err.code}: ${err.message}). Attempting configured fallback model [${nextModel}]...`
+        );
+      }
+    }
+
+    throw lastError || new GeminiServiceError('Gemini request failed after all model attempts', 'AI_PROVIDER_UNAVAILABLE', 503);
+  }
+
+  /**
+   * Executes a single Gemini model with bounded retries and exponential backoff for transient faults.
+   *
+   * @private
+   */
+  async _executeModelWithRetries({
+    client,
+    modelName,
+    redactedCode,
+    safeCode,
+    safeLang,
+    timeoutMs,
+    maxRetries,
+    retryDelayMs,
+    coordinateMapper,
+    redactedSecretsCount
+  }) {
     let attempt = 0;
     let lastError = null;
+
+    // Prompt construction with unique boundary token
+    const boundaryToken = crypto.randomBytes(16).toString('hex');
+    const { systemInstruction, contents } = buildGeminiPrompt(redactedCode, safeLang, boundaryToken);
 
     while (attempt <= maxRetries) {
       const abortController = new AbortController();
@@ -310,15 +423,20 @@ export class GeminiService {
       }, timeoutMs);
 
       try {
+        const requestConfig = {
+          systemInstruction,
+          temperature: 0.2,
+          responseMimeType: 'application/json',
+          abortSignal: abortController.signal
+        };
+        if (/gemini-(?:2\.5|3|3\.\d)/i.test(modelName)) {
+          requestConfig.thinkingConfig = { thinkingBudget: 0 };
+        }
+
         const response = await client.models.generateContent({
           model: modelName,
           contents,
-          config: {
-            systemInstruction,
-            temperature: 0.2,
-            responseMimeType: 'application/json',
-            abortSignal: abortController.signal
-          }
+          config: requestConfig
         });
 
         clearTimeout(timer);
@@ -344,7 +462,6 @@ export class GeminiService {
         }
 
         // Validate against strict Step 4/4.1 schema with source-aware coordinate checks
-        // safeCode coordinates match redactedCode 1:1 due to same-length masking
         const validationResult = validateAiResponse(parsedJson, safeCode);
         if (!validationResult.success) {
           throw new GeminiServiceError(
@@ -382,9 +499,8 @@ export class GeminiService {
         // Classify error
         const classified = classifyGeminiError(err, abortController, timeoutMs);
 
-        // If error is non-retryable or retries are exhausted, fail immediately
+        // If error is non-retryable on this model or retries for this model are exhausted, rethrow
         if (!classified.isRetryable || attempt >= maxRetries) {
-          logger.error(`Gemini service failure [${classified.error.code}]: ${classified.error.message}`);
           throw classified.error;
         }
 
@@ -392,7 +508,7 @@ export class GeminiService {
         attempt++;
 
         logger.warn(
-          `Gemini transient failure on attempt ${attempt}/${maxRetries + 1}: ${classified.error.message}. Retrying in ${retryDelayMs * attempt}ms...`
+          `Gemini transient failure on model [${modelName}] attempt ${attempt}/${maxRetries + 1}: ${classified.error.message}. Retrying in ${retryDelayMs * attempt}ms...`
         );
 
         if (retryDelayMs > 0) {
@@ -417,7 +533,7 @@ export const geminiService = new GeminiService();
  * @returns {Promise<object>} Normalized AI review result
  */
 export async function analyzeWithGemini(code, language, options = {}) {
-  const service = options.client || options.apiKey !== undefined || options.timeoutMs !== undefined
+  const service = options.client || options.apiKey !== undefined || options.timeoutMs !== undefined || options.model !== undefined || options.primaryModel !== undefined || options.fallbackModel !== undefined
     ? new GeminiService(options)
     : geminiService;
 

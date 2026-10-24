@@ -591,4 +591,233 @@ describe('Phase 8 — Secure Gemini AI Analysis Service', () => {
       );
     });
   });
+
+  // ===========================================================================
+  // 9. MULTI-MODEL RELIABILITY & PRIMARY / FALLBACK EXECUTION
+  // ===========================================================================
+  describe('9. Multi-Model Reliability & Fallback Policy', () => {
+    test('Primary model success: uses primary model and tags tier as primary', async () => {
+      const calls = [];
+      const mockClient = createMockClient(async (params) => {
+        calls.push(params.model);
+        return { text: JSON.stringify(createValidAiPayload()) };
+      });
+
+      const result = await analyzeWithGemini(SAMPLE_PYTHON_CODE, 'python', {
+        client: mockClient,
+        apiKey: 'test-key',
+        primaryModel: 'gemini-primary-test',
+        fallbackModel: 'gemini-fallback-test'
+      });
+
+      assert.strictEqual(calls.length, 1);
+      assert.strictEqual(calls[0], 'gemini-primary-test');
+      assert.strictEqual(result.aiModelUsed, 'gemini-primary-test');
+      assert.strictEqual(result.aiModelTier, 'primary');
+    });
+
+    test('Primary 429 followed by fallback success: engages fallback model and tags tier as fallback', async () => {
+      const calls = [];
+      const mockClient = createMockClient(async (params) => {
+        calls.push(params.model);
+        if (params.model === 'gemini-primary-test') {
+          const err429 = new Error('Quota exceeded on primary model');
+          err429.status = 429;
+          throw err429;
+        }
+        return { text: JSON.stringify(createValidAiPayload()) };
+      });
+
+      const result = await analyzeWithGemini(SAMPLE_PYTHON_CODE, 'python', {
+        client: mockClient,
+        apiKey: 'test-key',
+        primaryModel: 'gemini-primary-test',
+        fallbackModel: 'gemini-fallback-test'
+      });
+
+      assert.strictEqual(calls.length, 2);
+      assert.strictEqual(calls[0], 'gemini-primary-test');
+      assert.strictEqual(calls[1], 'gemini-fallback-test');
+      assert.strictEqual(result.aiModelUsed, 'gemini-fallback-test');
+      assert.strictEqual(result.aiModelTier, 'fallback');
+    });
+
+    test('Primary 503 followed by fallback success: retries primary, then falls back successfully', async () => {
+      const calls = [];
+      const mockClient = createMockClient(async (params) => {
+        calls.push(params.model);
+        if (params.model === 'gemini-primary-test') {
+          const err503 = new Error('Service Unavailable on primary');
+          err503.status = 503;
+          throw err503;
+        }
+        return { text: JSON.stringify(createValidAiPayload()) };
+      });
+
+      const result = await analyzeWithGemini(SAMPLE_PYTHON_CODE, 'python', {
+        client: mockClient,
+        apiKey: 'test-key',
+        primaryModel: 'gemini-primary-test',
+        fallbackModel: 'gemini-fallback-test',
+        maxRetries: 1,
+        retryDelayMs: 1
+      });
+
+      // 1 initial + 1 retry on primary = 2 primary calls, then 1 fallback call = 3 total
+      assert.strictEqual(calls.filter(m => m === 'gemini-primary-test').length, 2);
+      assert.strictEqual(calls.filter(m => m === 'gemini-fallback-test').length, 1);
+      assert.strictEqual(result.aiModelUsed, 'gemini-fallback-test');
+      assert.strictEqual(result.aiModelTier, 'fallback');
+    });
+
+    test('Both models unavailable (429): fails fast and rethrows AI_RATE_LIMITED without loop', async () => {
+      const calls = [];
+      const mockClient = createMockClient(async (params) => {
+        calls.push(params.model);
+        const err429 = new Error(`Quota exceeded on ${params.model}`);
+        err429.status = 429;
+        throw err429;
+      });
+
+      await assert.rejects(
+        async () => {
+          await analyzeWithGemini(SAMPLE_PYTHON_CODE, 'python', {
+            client: mockClient,
+            apiKey: 'test-key',
+            primaryModel: 'gemini-primary-test',
+            fallbackModel: 'gemini-fallback-test'
+          });
+        },
+        (err) => {
+          assert.strictEqual(err.code, 'AI_RATE_LIMITED');
+          assert.strictEqual(err.statusCode, 429);
+          return true;
+        }
+      );
+
+      // Called exactly once per candidate model, no infinite retry loop
+      assert.strictEqual(calls.length, 2);
+      assert.strictEqual(calls[0], 'gemini-primary-test');
+      assert.strictEqual(calls[1], 'gemini-fallback-test');
+    });
+
+    test('Invalid API key (401): fails fast and never attempts fallback model', async () => {
+      const calls = [];
+      const mockClient = createMockClient(async (params) => {
+        calls.push(params.model);
+        const err401 = new Error('API key not valid');
+        err401.status = 401;
+        throw err401;
+      });
+
+      await assert.rejects(
+        async () => {
+          await analyzeWithGemini(SAMPLE_PYTHON_CODE, 'python', {
+            client: mockClient,
+            apiKey: 'bad-key',
+            primaryModel: 'gemini-primary-test',
+            fallbackModel: 'gemini-fallback-test'
+          });
+        },
+        (err) => {
+          assert.strictEqual(err.code, 'AI_REQUEST_FAILED');
+          assert.strictEqual(err.statusCode, 401);
+          return true;
+        }
+      );
+
+      assert.strictEqual(calls.length, 1);
+      assert.strictEqual(calls[0], 'gemini-primary-test');
+    });
+
+    test('Invalid model identifier (404): fails fast and never attempts fallback model', async () => {
+      const calls = [];
+      const mockClient = createMockClient(async (params) => {
+        calls.push(params.model);
+        const err404 = new Error('Model models/invalid-model is not found');
+        err404.status = 404;
+        throw err404;
+      });
+
+      await assert.rejects(
+        async () => {
+          await analyzeWithGemini(SAMPLE_PYTHON_CODE, 'python', {
+            client: mockClient,
+            apiKey: 'test-key',
+            primaryModel: 'invalid-model',
+            fallbackModel: 'gemini-fallback-test'
+          });
+        },
+        (err) => {
+          assert.strictEqual(err.code, 'AI_INVALID_MODEL');
+          assert.strictEqual(err.statusCode, 404);
+          return true;
+        }
+      );
+
+      assert.strictEqual(calls.length, 1);
+      assert.strictEqual(calls[0], 'invalid-model');
+    });
+
+    test('Timeout (504): fails fast and never attempts fallback model', async () => {
+      const calls = [];
+      const mockClient = createMockClient(async (params) => {
+        calls.push(params.model);
+        return new Promise((_, reject) => {
+          setTimeout(() => {
+            const abortErr = new Error('The operation was aborted');
+            abortErr.name = 'AbortError';
+            reject(abortErr);
+          }, 30);
+        });
+      });
+
+      await assert.rejects(
+        async () => {
+          await analyzeWithGemini(SAMPLE_PYTHON_CODE, 'python', {
+            client: mockClient,
+            apiKey: 'test-key',
+            primaryModel: 'gemini-primary-test',
+            fallbackModel: 'gemini-fallback-test',
+            timeoutMs: 15
+          });
+        },
+        (err) => {
+          assert.strictEqual(err.code, 'AI_TIMEOUT');
+          assert.strictEqual(err.statusCode, 504);
+          return true;
+        }
+      );
+
+      assert.strictEqual(calls.length, 1);
+      assert.strictEqual(calls[0], 'gemini-primary-test');
+    });
+
+    test('Malformed AI response (502): fails fast and never attempts fallback model', async () => {
+      const calls = [];
+      const mockClient = createMockClient(async (params) => {
+        calls.push(params.model);
+        return { text: 'NOT VALID JSON AT ALL' };
+      });
+
+      await assert.rejects(
+        async () => {
+          await analyzeWithGemini(SAMPLE_PYTHON_CODE, 'python', {
+            client: mockClient,
+            apiKey: 'test-key',
+            primaryModel: 'gemini-primary-test',
+            fallbackModel: 'gemini-fallback-test'
+          });
+        },
+        (err) => {
+          assert.strictEqual(err.code, 'AI_INVALID_RESPONSE');
+          assert.strictEqual(err.statusCode, 502);
+          return true;
+        }
+      );
+
+      assert.strictEqual(calls.length, 1);
+      assert.strictEqual(calls[0], 'gemini-primary-test');
+    });
+  });
 });

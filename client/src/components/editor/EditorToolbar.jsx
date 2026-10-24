@@ -57,7 +57,7 @@ export function EditorToolbar({
   return (
     <div
       aria-label="Editor Toolbar"
-      className="h-12 bg-surface-secondary border-b border-border-subtle px-3 sm:px-4 flex items-center justify-between gap-2 overflow-x-auto select-none"
+      className="h-12 bg-surface-secondary border-b border-border-subtle px-3 sm:px-4 flex items-center justify-between gap-2 overflow-visible relative z-20 select-none"
     >
       {/* Left section: Language Selector, Status Badge & File Name */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
@@ -217,6 +217,7 @@ export function EditorToolbar({
           type="button"
           onClick={onAnalyze}
           disabled={isAnalyzing || isSubmittingReview || !code || code.trim().length === 0}
+          data-testid="analyze-button"
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-all cursor-pointer ${
             isAnalyzing
               ? 'bg-brand-primary/40 border border-brand-primary/50 text-white cursor-wait opacity-80'

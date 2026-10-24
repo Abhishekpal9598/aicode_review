@@ -59,7 +59,8 @@ export const getV1Health = (req, res) => {
       },
       ai: {
         configured: aiConfigured,
-        model: env.GEMINI_MODEL
+        model: env.GEMINI_MODEL,
+        fallbackModel: env.GEMINI_FALLBACK_MODEL
       },
       timestamp
     });

@@ -104,7 +104,11 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
   const handleEditorMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
-  }, []);
+    if (typeof window !== 'undefined') {
+      window.__codeReviewEditor = editor;
+      window.__updateCode = updateCode;
+    }
+  }, [updateCode]);
 
   // Clear line decorations helper
   const clearDecorations = useCallback(() => {
@@ -253,10 +257,21 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
       // Extract original snippet for undo history
       const originalSnippet = lines.slice(lineStart - 1, lineEnd).join('\n');
 
+      // Preserve indentation: if target line has leading indentation, ensure replacement matches it
+      const targetFirstLine = lines[lineStart - 1] || '';
+      const indentMatch = targetFirstLine.match(/^(\s*)/);
+      const baseIndent = indentMatch ? indentMatch[1] : '';
+
+      const rawReplacementLines = finding.suggestedSnippet.split(/\r?\n/);
+      const replacementLines = (baseIndent && !rawReplacementLines[0].startsWith(baseIndent))
+        ? rawReplacementLines.map((l) => (l.trim().length > 0 ? baseIndent + l : l))
+        : rawReplacementLines;
+
+      const indentedSnippet = replacementLines.join('\n');
+
       // Construct new code with multiline support and preserving surrounding code
       const beforeLines = lines.slice(0, lineStart - 1);
       const afterLines = lines.slice(lineEnd);
-      const replacementLines = finding.suggestedSnippet.split(/\r?\n/);
       const newCode = [...beforeLines, ...replacementLines, ...afterLines].join('\n');
 
       // Apply via Monaco executeEdits if mounted
@@ -272,7 +287,7 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
             editor.executeEdits('apply-fix', [
               {
                 range: new monaco.Range(lineStart, 1, safeEndLine, maxCol),
-                text: finding.suggestedSnippet,
+                text: indentedSnippet,
                 forceMoveMarkers: true
               }
             ]);
@@ -296,7 +311,7 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
         lineStart,
         lineEnd,
         previousSnippet: originalSnippet,
-        appliedSnippet: finding.suggestedSnippet,
+        appliedSnippet: indentedSnippet,
         timestamp: new Date().toISOString()
       };
 
@@ -313,7 +328,7 @@ function CodeReviewContent({ searchParams, setSearchParams }) {
             lineStart,
             lineEnd,
             previousSnippet: originalSnippet,
-            appliedSnippet: finding.suggestedSnippet,
+            appliedSnippet: indentedSnippet,
             updatedCode: newCode
           });
         } catch (err) {

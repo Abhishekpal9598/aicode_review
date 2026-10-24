@@ -89,7 +89,8 @@ export function AuthProvider({ children }) {
     register,
     logout,
     clearError,
-    refreshUser: checkSession
+    refreshUser: checkSession,
+    updateUser: (updated) => setUser((prev) => ({ ...prev, ...updated }))
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

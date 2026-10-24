@@ -50,8 +50,8 @@ export const injectionRules = [
   },
   {
     ruleId: 'SEC-PY-CMD-001',
-    name: 'Subprocess Command Execution with shell=True in Python',
-    title: 'Subprocess Execution with shell=True',
+    name: 'Command Execution / Shell Injection in Python (os.system/subprocess)',
+    title: 'Command Execution / Shell Injection (os.system/subprocess)',
     category: 'SEC',
     severity: 'HIGH',
     owaspCategory: 'A03:2021-Injection',
@@ -59,11 +59,14 @@ export const injectionRules = [
     confidence: 'HIGH',
     languages: ['python'],
     scanRaw: false,
-    regex: /subprocess\s*\.\s*(?:Popen|call|check_call|check_output|run)\s*\([^)]*shell\s*=\s*True/g,
+    regex:
+      /(?:subprocess\s*\.\s*(?:Popen|call|check_call|check_output|run)\s*\([^)]*shell\s*=\s*True|\bos\s*\.\s*(?:system|popen|spawn[lpe]*)\s*\()/g,
+    matchFilter: (match, targetText) => !isInsidePythonStringLiteral(targetText, match.index),
     explanation:
-      'Invoking subprocess commands with shell=True spawns an underlying system shell, exposing the application to command injection if arguments contain untrusted data.',
+      'Executing system commands via os.system(), os.popen(), or subprocess with shell=True spawns an underlying system shell, exposing the application to command injection if arguments contain untrusted data.',
     suggestedSnippet: 'subprocess.run(["cmd", arg1, arg2], shell=False, check=True)',
-    remediation: 'Pass arguments as a sequence of strings and keep shell=False (the default).'
+    remediation:
+      'Pass arguments as a sequence of strings and keep shell=False (the default) using subprocess.run(). Avoid os.system() and os.popen().'
   },
 
   // --- JAVASCRIPT / TYPESCRIPT INJECTION RULES ---
@@ -95,7 +98,9 @@ export const injectionRules = [
     confidence: 'HIGH',
     languages: ['javascript', 'typescript'],
     scanRaw: false,
-    regex: /child_process\s*\.\s*exec\s*\([^)]*[\$\+]/g,
+    regex:
+      /(?:child_process|require\s*\(\s*['"](?:node:)?child_process['"]\s*\))\s*\.\s*(?:exec|execSync)\s*\([^)]*[\$\+]/g,
+    matchFilter: (match, targetText) => !isInsideJsStringLiteral(targetText, match.index),
     explanation:
       'Passing dynamically concatenated strings with variables to child_process.exec() passes the string directly to a system shell, enabling command injection.',
     suggestedSnippet: 'child_process.execFile("executable", [arg1, arg2], callback);',
@@ -184,10 +189,14 @@ export const injectionRules = [
     confidence: 'HIGH',
     languages: ['c'],
     scanRaw: false,
-    regex: /\bstrcpy\s*\(\s*[a-zA-Z_]\w*\s*,\s*[^)]+\)/g,
+    regex: /\bstrcpy\s*\(\s*([a-zA-Z_]\w*(?:\[[^\]]*\]|(?:\->|\.)[a-zA-Z_]\w*)*)\s*,\s*(.+?)\)\s*(?:;|$)/g,
     explanation:
       'strcpy() performs unbounded byte copies until a null terminator is reached, creating classic buffer overflow vulnerabilities.',
-    suggestedSnippet: 'strncpy(dest, src, sizeof(dest) - 1);\ndest[sizeof(dest) - 1] = \'\\0\';',
+    suggestedSnippet: (m) => {
+      const dest = m && m[1] ? m[1] : 'dest';
+      const src = m && m[2] ? m[2] : 'src';
+      return `strncpy(${dest}, ${src}, sizeof(${dest}) - 1);\n${dest}[sizeof(${dest}) - 1] = '\\0';`;
+    },
     remediation: 'Replace strcpy() with strncpy() or snprintf(), ensuring explicit null termination.'
   },
   {
@@ -201,10 +210,13 @@ export const injectionRules = [
     confidence: 'HIGH',
     languages: ['c'],
     scanRaw: false,
-    regex: /\bgets\s*\(\s*[a-zA-Z_]\w*\s*\)/g,
+    regex: /\bgets\s*\(\s*([a-zA-Z_]\w*(?:\[[^\]]*\]|(?:\->|\.)[a-zA-Z_]\w*)*)\s*\)/g,
     explanation:
       'gets() has no buffer bounds checking and cannot be safely used under any circumstances. It was removed in ISO C11.',
-    suggestedSnippet: 'fgets(buf, sizeof(buf), stdin);',
+    suggestedSnippet: (m) => {
+      const target = m && m[1] ? m[1] : 'buf';
+      return `fgets(${target}, sizeof(${target}), stdin);`;
+    },
     remediation: 'Replace gets() with fgets(), explicitly specifying destination buffer capacity.'
   },
   {
@@ -218,10 +230,14 @@ export const injectionRules = [
     confidence: 'HIGH',
     languages: ['c'],
     scanRaw: false,
-    regex: /\bsprintf\s*\(\s*[a-zA-Z_]\w*\s*,\s*["'][^"']*%s/g,
+    regex: /\bsprintf\s*\(\s*([a-zA-Z_]\w*(?:\[[^\]]*\]|(?:\->|\.)[a-zA-Z_]\w*)*)\s*,\s*(["'][^"']*%s[^"']*["'](?:\s*,\s*.+?)?)\)\s*(?:;|$)/g,
     explanation:
       'Using sprintf() with %s format specifiers does not enforce destination bounds, leading to classic buffer overflows on long inputs.',
-    suggestedSnippet: 'snprintf(out, sizeof(out), "Record: %s", userInput);',
+    suggestedSnippet: (m) => {
+      const dest = m && m[1] ? m[1] : 'out';
+      const args = m && m[2] ? m[2] : '"Record: %s", userInput';
+      return `snprintf(${dest}, sizeof(${dest}), ${args});`;
+    },
     remediation: 'Use snprintf() and supply the destination buffer capacity.'
   },
   {
@@ -235,10 +251,13 @@ export const injectionRules = [
     confidence: 'HIGH',
     languages: ['c'],
     scanRaw: false,
-    regex: /\bscanf\s*\(\s*["'][^"']*%s[^"']*["']/g,
+    regex: /\bscanf\s*\(\s*["'][^"']*%s[^"']*["'](?:\s*,\s*([a-zA-Z_]\w*(?:\[[^\]]*\]|(?:\->|\.)[a-zA-Z_]\w*)*))?\s*\)/g,
     explanation:
       'Using scanf() with an unconstrained %s specifier writes input until whitespace without checking target array capacity.',
-    suggestedSnippet: 'scanf("%31s", name); // For a 32-byte array',
+    suggestedSnippet: (m) => {
+      const target = m && m[1] ? m[1] : 'name';
+      return `fgets(${target}, sizeof(${target}), stdin);`;
+    },
     remediation: 'Specify maximum field width in format specifiers (e.g. %31s) or use fgets().'
   },
   {
@@ -269,10 +288,14 @@ export const injectionRules = [
     confidence: 'HIGH',
     languages: ['cpp'],
     scanRaw: false,
-    regex: /\b(?:strcpy|strcat)\s*\(/g,
+    regex: /\b(?:strcpy|strcat)\s*\(\s*([a-zA-Z_]\w*(?:\[[^\]]*\]|(?:\->|\.)[a-zA-Z_]\w*)*)\s*,\s*(.+?)\)\s*(?:;|$)/g,
     explanation:
       'Using legacy C-style string manipulation functions (strcpy, strcat) in C++ forfeits RAII memory safety and risks buffer overflows.',
-    suggestedSnippet: 'std::string buf = input;',
+    suggestedSnippet: (m) => {
+      const dest = m && m[1] ? m[1] : 'buf';
+      const src = m && m[2] ? m[2] : 'input';
+      return `std::string ${dest} = ${src};`;
+    },
     remediation: 'Use std::string or std::string_view instead of raw char pointers and legacy C copy routines.'
   },
   {
@@ -303,12 +326,56 @@ export const injectionRules = [
     confidence: 'HIGH',
     languages: ['cpp'],
     scanRaw: false,
-    regex: /\b(?:std\s*::\s*)?(?:sprintf|vsprintf)\s*\(/g,
+    regex: /\b(?:std\s*::\s*)?(?:sprintf|vsprintf)\s*\(\s*([a-zA-Z_]\w*(?:\[[^\]]*\]|(?:\->|\.)[a-zA-Z_]\w*)*)\s*,\s*(.+?)\)\s*(?:;|$)/g,
     explanation:
       'Using sprintf() or vsprintf() without bounds checking in C++ risks buffer overflow vulnerabilities.',
-    suggestedSnippet: 'snprintf(buf, sizeof(buf), "%s", str.c_str());',
+    suggestedSnippet: (m) => {
+      const dest = m && m[1] ? m[1] : 'buf';
+      const args = m && m[2] ? m[2] : '"%s", str.c_str()';
+      return `snprintf(${dest}, sizeof(${dest}), ${args});`;
+    },
     remediation: 'Use snprintf() with destination capacity bounds, std::ostringstream, or C++20 std::format.'
   }
 ];
+
+function isInsidePythonStringLiteral(text, index) {
+  if (typeof text !== 'string' || index <= 0) return false;
+
+  // 1. Check if inside triple quotes before index
+  const prefix = text.slice(0, index);
+  const tripleDoubleCount = (prefix.match(/"""/g) || []).length;
+  if (tripleDoubleCount % 2 !== 0) return true;
+  const tripleSingleCount = (prefix.match(/'''/g) || []).length;
+  if (tripleSingleCount % 2 !== 0) return true;
+
+  // 2. Check if inside single-line quotes on current line (after stripping closed triple quotes)
+  const lineStart = text.lastIndexOf('\n', index - 1) + 1;
+  let lineBefore = text.slice(lineStart, index);
+  lineBefore = lineBefore.replace(/"""[\s\S]*?"""/g, '').replace(/'''[\s\S]*?'''/g, '');
+  const doubleQuotes = (lineBefore.match(/(?<!\\)"/g) || []).length;
+  const singleQuotes = (lineBefore.match(/(?<!\\)'/g) || []).length;
+  return doubleQuotes % 2 !== 0 || singleQuotes % 2 !== 0;
+}
+
+function isInsideJsStringLiteral(text, index) {
+  if (typeof text !== 'string' || index <= 0) return false;
+
+  // 1. Check if inside unescaped backtick template literal
+  const prefix = text.slice(0, index);
+  const backtickCount = (prefix.match(/(?<!\\)`/g) || []).length;
+  if (backtickCount % 2 !== 0) return true;
+
+  // 2. Check if inside single or double quotes on current line
+  const lineStart = text.lastIndexOf('\n', index - 1) + 1;
+  let lineBefore = text.slice(lineStart, index);
+  // Strip closed template literals on this line so inner quotes don't skew counts
+  lineBefore = lineBefore.replace(/(?<!\\)`[\s\S]*?(?<!\\)`/g, '');
+  // Strip closed string literals
+  lineBefore = lineBefore.replace(/(?<!\\)'(?:\\.|[^'])*?(?<!\\)'/g, '');
+  lineBefore = lineBefore.replace(/(?<!\\)"(?:\\.|[^"])*?(?<!\\)"/g, '');
+  const doubleQuotes = (lineBefore.match(/(?<!\\)"/g) || []).length;
+  const singleQuotes = (lineBefore.match(/(?<!\\)'/g) || []).length;
+  return doubleQuotes % 2 !== 0 || singleQuotes % 2 !== 0;
+}
 
 export default injectionRules;

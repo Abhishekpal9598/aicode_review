@@ -105,6 +105,11 @@ const envSchema = z
       .trim()
       .min(1, { message: 'GEMINI_MODEL cannot be empty' })
       .default('gemini-3.5-flash'),
+    GEMINI_FALLBACK_MODEL: z
+      .string()
+      .trim()
+      .min(1, { message: 'GEMINI_FALLBACK_MODEL cannot be empty' })
+      .default('gemini-3.8-flash'),
     GEMINI_TIMEOUT_MS: z.preprocess(
       (val) => {
         if (typeof val === 'string') {
@@ -117,11 +122,11 @@ const envSchema = z
       },
       z
         .number({
-          invalid_type_error: 'GEMINI_TIMEOUT_MS must be a positive integer between 1 and 30000'
+          invalid_type_error: 'GEMINI_TIMEOUT_MS must be a positive integer between 1 and 60000'
         })
         .int({ message: 'GEMINI_TIMEOUT_MS must be an integer' })
         .min(1, { message: 'GEMINI_TIMEOUT_MS must be at least 1 millisecond' })
-        .max(30000, { message: 'GEMINI_TIMEOUT_MS cannot exceed 30000 milliseconds (30 seconds)' })
+        .max(60000, { message: 'GEMINI_TIMEOUT_MS cannot exceed 60000 milliseconds (60 seconds)' })
         .default(30000)
     ),
     HEALTH_RATE_LIMIT_MAX: z.preprocess(
@@ -207,6 +212,7 @@ try {
     REFRESH_TOKEN_EXPIRES_IN: process.env.REFRESH_TOKEN_EXPIRES_IN,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     GEMINI_MODEL: process.env.GEMINI_MODEL,
+    GEMINI_FALLBACK_MODEL: process.env.GEMINI_FALLBACK_MODEL,
     GEMINI_TIMEOUT_MS: process.env.GEMINI_TIMEOUT_MS,
     TRUST_PROXY: process.env.TRUST_PROXY,
     HEALTH_RATE_LIMIT_MAX: process.env.HEALTH_RATE_LIMIT_MAX

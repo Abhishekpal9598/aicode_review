@@ -22,6 +22,36 @@ export const resolveUrl = (endpoint) => {
 };
 
 class ApiClient {
+  constructor() {
+    this.token = null;
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        this.token = window.sessionStorage.getItem('auth_token') || null;
+      } catch {
+        this.token = null;
+      }
+    }
+  }
+
+  setToken(token) {
+    this.token = token || null;
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        if (token) {
+          window.sessionStorage.setItem('auth_token', token);
+        } else {
+          window.sessionStorage.removeItem('auth_token');
+        }
+      } catch {
+        // Ignore storage access errors in restricted contexts
+      }
+    }
+  }
+
+  getToken() {
+    return this.token;
+  }
+
   async request(endpoint, options = {}) {
     const url = resolveUrl(endpoint);
     const headers = {
@@ -29,6 +59,10 @@ class ApiClient {
       'X-Requested-With': 'XMLHttpRequest',
       ...options.headers
     };
+
+    if (this.token && !headers['Authorization']) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
 
     const config = {
       credentials: 'include', // Automatically transmit and store HttpOnly cookies
@@ -46,6 +80,10 @@ class ApiClient {
       const data = isJson ? await response.json() : await response.text();
 
       if (!response.ok) {
+        if (response.status === 401) {
+          // Token expired or invalidated; clear client token cache
+          this.setToken(null);
+        }
         const error = new Error(
           (data && data.error?.message) ||
           (data && data.message) ||
@@ -104,19 +142,39 @@ class ApiClient {
    * Phase 4: Authentication Helper Methods
    */
   async register(userData) {
-    return this.post('/v1/auth/register', userData);
+    const res = await this.post('/v1/auth/register', userData);
+    if (res && res.data?.token) {
+      this.setToken(res.data.token);
+    }
+    return res;
   }
 
   async login(credentials) {
-    return this.post('/v1/auth/login', credentials);
+    const res = await this.post('/v1/auth/login', credentials);
+    if (res && res.data?.token) {
+      this.setToken(res.data.token);
+    }
+    return res;
   }
 
   async logout() {
-    return this.post('/v1/auth/logout');
+    try {
+      return await this.post('/v1/auth/logout');
+    } finally {
+      this.setToken(null);
+    }
   }
 
   async getCurrentUser() {
     return this.get('/v1/auth/me');
+  }
+
+  async changePassword(passwordData) {
+    const res = await this.put('/v1/auth/password', passwordData);
+    if (res && res.data?.token) {
+      this.setToken(res.data.token);
+    }
+    return res;
   }
 
   /**
@@ -288,6 +346,10 @@ class ApiClient {
    * @param {object} [data={}] - Optional restoredCode
    * @returns {Promise<object>} ApiResponse
    */
+  async undoFix(id, data = {}) {
+    return this.post(`/v1/reviews/${id}/undo-fix`, data);
+  }
+
   /**
    * Phase 13: Export Review Audit Report
    * GET /api/v1/reviews/:id/export?format=json|markdown

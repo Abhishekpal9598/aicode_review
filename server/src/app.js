@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { env } from './config/env.js';
+import { corsOptions, normalizedAllowedOrigin } from './config/cors.js';
 import v1Routes from './routes/index.routes.js';
 import { getPhase1Health } from './controllers/health.controller.js';
 import { healthLimiter } from './middleware/rateLimit.middleware.js';
@@ -20,19 +21,7 @@ if (env.TRUST_PROXY !== false && env.TRUST_PROXY !== undefined) {
 app.use(helmet());
 
 // 2. Origin-restricted CORS with credentials support
-const allowedOrigin = env.CLIENT_URL || 'http://localhost:5173';
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow non-browser requests (curl, server-to-server) or matching allowedOrigin
-    if (!origin || origin === allowedOrigin) {
-      callback(null, true);
-    } else {
-      callback(null, false);
-    }
-  },
-  credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}));
+app.use(cors(corsOptions));
 
 // 3. Request body & cookie parsing with size limits
 app.use(express.json({ limit: '2mb' }));
@@ -47,7 +36,7 @@ app.get('/', (req, res) => {
     documentation: '/api/v1',
     health: '/api/health',
     v1Health: '/api/v1/health',
-    clientUrl: allowedOrigin
+    clientUrl: normalizedAllowedOrigin
   });
 });
 

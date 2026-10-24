@@ -10,10 +10,14 @@ export const cRules = [
     category: 'RISK',
     severity: 'CRITICAL',
     scanRaw: false,
-    regex: /\bstrcpy\s*\(\s*[a-zA-Z_]\w*\s*,\s*[^)]+\)/g,
+    regex: /\bstrcpy\s*\(\s*([a-zA-Z_]\w*(?:\[[^\]]*\]|(?:\->|\.)[a-zA-Z_]\w*)*)\s*,\s*(.+?)\)\s*(?:;|$)/g,
     explanation:
       'strcpy() performs unbounded byte copies until a null terminator is reached, creating severe stack/heap buffer overflow vulnerabilities.',
-    suggestedSnippet: 'strncpy(dest, src, sizeof(dest) - 1);\ndest[sizeof(dest) - 1] = \'\\0\';',
+    suggestedSnippet: (m) => {
+      const dest = m && m[1] ? m[1] : 'dest';
+      const src = m && m[2] ? m[2] : 'src';
+      return `strncpy(${dest}, ${src}, sizeof(${dest}) - 1);\n${dest}[sizeof(${dest}) - 1] = '\\0';`;
+    },
     remediation: 'Replace strcpy() with strncpy() or snprintf(), ensuring explicit null termination.'
   },
   {
@@ -23,10 +27,13 @@ export const cRules = [
     category: 'RISK',
     severity: 'CRITICAL',
     scanRaw: false,
-    regex: /\bgets\s*\(\s*[a-zA-Z_]\w*\s*\)/g,
+    regex: /\bgets\s*\(\s*([a-zA-Z_]\w*(?:\[[^\]]*\]|(?:\->|\.)[a-zA-Z_]\w*)*)\s*\)/g,
     explanation:
       'gets() has no bounds checking and cannot be safely used. It was formally removed in ISO C11 due to universal buffer overflow hazards.',
-    suggestedSnippet: 'fgets(buf, sizeof(buf), stdin);',
+    suggestedSnippet: (m) => {
+      const target = m && m[1] ? m[1] : 'buf';
+      return `fgets(${target}, sizeof(${target}), stdin);`;
+    },
     remediation: 'Replace gets() with fgets() specifying the destination buffer capacity.'
   },
   {
@@ -36,10 +43,14 @@ export const cRules = [
     category: 'RISK',
     severity: 'HIGH',
     scanRaw: false,
-    regex: /\bsprintf\s*\(\s*[a-zA-Z_]\w*\s*,\s*["'][^"']*%s/g,
+    regex: /\bsprintf\s*\(\s*([a-zA-Z_]\w*(?:\[[^\]]*\]|(?:\->|\.)[a-zA-Z_]\w*)*)\s*,\s*(["'][^"']*%s[^"']*["'](?:\s*,\s*.+?)?)\)\s*(?:;|$)/g,
     explanation:
       'Using sprintf() with %s specifiers does not enforce destination bounds, leading to buffer overflows when formatting unexpected string lengths.',
-    suggestedSnippet: 'snprintf(out, sizeof(out), "Record: %s", userInput);',
+    suggestedSnippet: (m) => {
+      const dest = m && m[1] ? m[1] : 'out';
+      const args = m && m[2] ? m[2] : '"Record: %s", userInput';
+      return `snprintf(${dest}, sizeof(${dest}), ${args});`;
+    },
     remediation: 'Use snprintf() and supply destination buffer capacity.'
   },
   {
@@ -49,10 +60,13 @@ export const cRules = [
     category: 'RISK',
     severity: 'HIGH',
     scanRaw: false,
-    regex: /\bscanf\s*\(\s*["'][^"']*%s[^"']*["']/g,
+    regex: /\bscanf\s*\(\s*["'][^"']*%s[^"']*["'](?:\s*,\s*([a-zA-Z_]\w*(?:\[[^\]]*\]|(?:\->|\.)[a-zA-Z_]\w*)*))?\s*\)/g,
     explanation:
       'Using scanf() with an unconstrained %s specifier writes until whitespace without checking target array length.',
-    suggestedSnippet: 'scanf("%31s", name); // For a 32-byte array',
+    suggestedSnippet: (m) => {
+      const target = m && m[1] ? m[1] : 'name';
+      return `fgets(${target}, sizeof(${target}), stdin);`;
+    },
     remediation: 'Specify maximum field width in format specifiers (e.g. %31s) or use fgets().'
   },
   {
