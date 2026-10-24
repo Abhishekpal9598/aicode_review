@@ -14,7 +14,7 @@ const isProduction = env.NODE_ENV === 'production';
  * 3. Localhost origins (http://localhost:*, http://127.0.0.1:*) ->
  *    Allowed in development/test only; BLOCKED in production.
  * 4. Project-specific Vercel production and preview domains
- *    (https://ai-code-review*.vercel.app) -> Allowed.
+ *    (https://ai-code-review*.vercel.app, https://aicode-review*.vercel.app) -> Allowed.
  * 5. All other origins (including arbitrary third-party *.vercel.app) ->
  *    Strictly Rejected.
  *
@@ -32,7 +32,8 @@ export const isOriginAllowed = (origin) => {
   if (!isProduction && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(cleanOrigin)) return true;
 
   // Project-specific Vercel production and preview domains
-  if (/^https:\/\/ai-code-review(-[a-zA-Z0-9_-]+)?\.vercel\.app$/.test(cleanOrigin)) return true;
+  // Matches both 'ai-code-review' and 'aicode-review' naming conventions (e.g. aicode-review-ten.vercel.app)
+  if (/^https:\/\/(ai-code-review|aicode-review)(-[a-zA-Z0-9_-]+)?\.vercel\.app$/.test(cleanOrigin)) return true;
 
   return false;
 };

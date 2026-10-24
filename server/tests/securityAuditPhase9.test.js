@@ -421,6 +421,21 @@ describe('Phase 9: Comprehensive Authentication & JWT Security Audit', () => {
       assert.equal(res.body.success, true);
     });
 
+    it('accepts cookie-authenticated POST with production Vercel Origin (aicode-review-ten.vercel.app)', async () => {
+      const res = await makeRequest('/api/v1/reviews', {
+        method: 'POST',
+        headers: {
+          Cookie: `access_token=${cookieToken}`,
+          Origin: 'https://aicode-review-ten.vercel.app',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: { code: 'print("prod safe")', language: 'python', title: 'Production Vercel Review' }
+      });
+
+      assert.equal(res.status, 201);
+      assert.equal(res.body.success, true);
+    });
+
     it('exempts safe GET requests from CSRF origin checks', async () => {
       const res = await makeRequest('/api/v1/auth/me', {
         method: 'GET',
@@ -444,6 +459,9 @@ describe('Phase 9: Comprehensive Authentication & JWT Security Audit', () => {
       assert.equal(isOriginAllowed('http://malicious.org'), false);
       assert.equal(isOriginAllowed('https://random-app.vercel.app'), false);
       assert.equal(isOriginAllowed('http://ai-code-review.vercel.app'), false, 'HTTP without TLS must be rejected');
+      assert.equal(isOriginAllowed('http://aicode-review-ten.vercel.app'), false, 'HTTP without TLS must be rejected');
+      assert.equal(isOriginAllowed('https://aicode-review-ten.vercel.app.evil.com'), false);
+      assert.equal(isOriginAllowed('https://not-aicode-review.vercel.app'), false);
     });
 
     it('isOriginAllowed returns true for authorized project domains', () => {
@@ -451,6 +469,9 @@ describe('Phase 9: Comprehensive Authentication & JWT Security Audit', () => {
       assert.equal(isOriginAllowed('http://127.0.0.1:3000'), true);
       assert.equal(isOriginAllowed('https://ai-code-review.vercel.app'), true);
       assert.equal(isOriginAllowed('https://ai-code-review-preview-42.vercel.app'), true);
+      assert.equal(isOriginAllowed('https://aicode-review-ten.vercel.app'), true, 'Production Vercel domain must be allowed');
+      assert.equal(isOriginAllowed('https://aicode-review.vercel.app'), true);
+      assert.equal(isOriginAllowed('https://aicode-review-preview-99.vercel.app'), true);
       assert.equal(isOriginAllowed(null), true, 'Server-to-server calls without Origin must be allowed');
     });
 
