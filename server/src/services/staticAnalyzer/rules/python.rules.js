@@ -70,6 +70,137 @@ export const pythonRules = [
       'Default arguments in Python are evaluated once at function definition time. Using mutable defaults (list or dict) shares state across calls.',
     suggestedSnippet: 'def func(items=None):\n    if items is None:\n        items = []',
     remediation: 'Use None as the default argument and initialize the mutable object inside the function body.'
+  },
+  {
+    ruleId: 'RISK-PY-004',
+    name: 'Potential Division by Zero in Python',
+    title: 'Potential Division by Zero',
+    category: 'RISK',
+    severity: 'HIGH',
+    cwe: 'CWE-369',
+    owaspCategory: 'A04:2021-Insecure Design',
+    confidence: 'HIGH',
+    scanRaw: false,
+    regex: /(?:return\s+|[a-zA-Z_]\w*\s*=\s*)[^\n#/]+(?:\/|\/\/|%)\s*([a-zA-Z_]\w*)\b|(?:\/|\/\/|%|\/=|%=)\s*0+(?![0-9.])/g,
+    explanation:
+      'Division or modulo by zero raises ZeroDivisionError in Python, terminating process execution if unhandled.',
+    suggestedSnippet: (m) => {
+      const divisor = m && m[1] ? m[1] : 'divisor';
+      return `if ${divisor} == 0:\n    raise ValueError("Divisor cannot be zero")\nreturn a / ${divisor}`;
+    },
+    remediation: 'Verify that denominator operands are non-zero before evaluating division or modulo operations.',
+    matchFilter: (match, targetText) => {
+      if (isInsidePythonStringLiteral(targetText, match.index)) return false;
+      if (match[1]) {
+        const divisor = match[1];
+        const matchIndex = match.index;
+        const lookback = targetText.slice(Math.max(0, matchIndex - 300), matchIndex);
+        const guardRegex = new RegExp(`if\\s+(?:${divisor}\\s*(?:==|!=|<=|<|>)\\s*0|not\\s+${divisor}\\b|${divisor}\\b)`);
+        if (guardRegex.test(lookback)) return false;
+      }
+      return true;
+    }
+  },
+  {
+    ruleId: 'RISK-PY-005',
+    name: 'NoneType Attribute Access or Call in Python',
+    title: 'Potential None Dereference / AttributeError',
+    category: 'RISK',
+    severity: 'HIGH',
+    cwe: 'CWE-476',
+    owaspCategory: 'A04:2021-Insecure Design',
+    confidence: 'HIGH',
+    scanRaw: false,
+    regex: /\b([a-zA-Z_]\w*)\s*=\s*None\b[\s\S]*?\b\1\s*(?:\.\s*[a-zA-Z_]\w*|\s*\([^)]*\))|\bNone\s*\.\s*[a-zA-Z_]\w*|\bNone\s*\(/g,
+    explanation:
+      'Attempting to access attributes or invoke methods on None raises AttributeError: \'NoneType\' object has no attribute or TypeError: \'NoneType\' object is not callable.',
+    suggestedSnippet: 'if val is not None:\n    val.process()',
+    remediation: 'Check that objects are not None using "if obj is not None:" before invoking methods or accessing attributes.',
+    matchFilter: (match, targetText) => {
+      if (isInsidePythonStringLiteral(targetText, match.index)) return false;
+      if (match[1]) {
+        const varName = match[1];
+        const matchText = match[0];
+        const firstEq = matchText.indexOf('=');
+        const between = matchText.slice(firstEq + 5);
+        const reassignRegex = new RegExp(`\\b${varName}\\s*=\\s*(?!None\\b)`);
+        if (reassignRegex.test(between)) return false;
+        const guardRegex = new RegExp(`if\\s+(?:${varName}\\s+is\\s+not\\s+None|${varName}\\b(?!\\s+is\\s+None))`);
+        if (guardRegex.test(between)) return false;
+      }
+      return true;
+    }
+  },
+  {
+    ruleId: 'RISK-PY-006',
+    name: 'Unclosed File Handle or Resource Leak in Python',
+    title: 'Resource Leak / Unclosed File Handle',
+    category: 'RISK',
+    severity: 'MEDIUM',
+    cwe: 'CWE-775',
+    owaspCategory: 'A04:2021-Insecure Design',
+    confidence: 'HIGH',
+    scanRaw: false,
+    regex: /(?<!with\s+)\b([a-zA-Z_]\w*)\s*=\s*open\s*\([^)\n]+\)/g,
+    explanation:
+      'Opening files with open() without a "with" context manager or explicit close() leaks system file descriptors.',
+    suggestedSnippet: 'with open("data.txt", "r") as f:\n    data = f.read()',
+    remediation: 'Always use the "with open(...) as f:" context manager to ensure files are closed automatically.',
+    matchFilter: (match, targetText) => {
+      if (isInsidePythonStringLiteral(targetText, match.index)) return false;
+      const lineStart = targetText.lastIndexOf('\n', match.index) + 1;
+      const lineBefore = targetText.slice(lineStart, match.index);
+      if (/with\s+/.test(lineBefore)) return false;
+      const varName = match[1];
+      const postText = targetText.slice(match.index + match[0].length);
+      const closeRegex = new RegExp(`\\b${varName}\\s*\\.\\s*close\\s*\\(`);
+      return !closeRegex.test(postText);
+    }
+  },
+  {
+    ruleId: 'RISK-PY-007',
+    name: 'List Index Out of Bounds in Python',
+    title: 'List Index Out of Bounds',
+    category: 'RISK',
+    severity: 'HIGH',
+    cwe: 'CWE-125',
+    owaspCategory: 'A04:2021-Insecure Design',
+    confidence: 'HIGH',
+    scanRaw: false,
+    regex: /\b([a-zA-Z_]\w*)\s*=\s*\[([^\]]*)\][\s\S]*?\b\1\s*\[\s*(-?\d+)\s*\]/g,
+    explanation:
+      'Accessing a list with a constant index equal to or greater than its declared item count raises IndexError at runtime.',
+    suggestedSnippet: 'if index < len(items):\n    val = items[index]',
+    remediation: 'Ensure index access is guarded against len(list) or handle IndexError appropriately.',
+    matchFilter: (match, targetText) => {
+      if (isInsidePythonStringLiteral(targetText, match.index)) return false;
+      const rawItems = match[2].trim();
+      const items = rawItems.length > 0 ? rawItems.split(',').map((s) => s.trim()) : [];
+      const accessedIndex = parseInt(match[3], 10);
+      if (items.length === 0) return true;
+      if (accessedIndex >= items.length || accessedIndex < -items.length) return true;
+      return false;
+    }
+  },
+  {
+    ruleId: 'QUAL-PY-003',
+    name: 'Unconditional Infinite Loop in Python',
+    title: 'Unconditional Infinite Loop',
+    category: 'QUAL',
+    severity: 'HIGH',
+    cwe: 'CWE-835',
+    owaspCategory: 'A04:2021-Insecure Design',
+    confidence: 'HIGH',
+    scanRaw: false,
+    regex: /\bwhile\s+(?:True|1)\s*:((?:(?!break|return|raise|sys\.exit)[\s\S])*?)(?=\n\S|\n*$)/g,
+    explanation:
+      'A while True: loop containing no break, return, or raise statements executes forever, leading to CPU starvation and process hangs.',
+    suggestedSnippet: 'while is_running:\n    if should_stop():\n        break\n    process_item()',
+    remediation: 'Ensure loops terminate via state condition flags or explicit break/return statements.',
+    matchFilter: (match, targetText) => {
+      if (isInsidePythonStringLiteral(targetText, match.index)) return false;
+      return true;
+    }
   }
 ];
 

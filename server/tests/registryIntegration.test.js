@@ -26,11 +26,11 @@ import {
 
 describe('Phase 9 — Step 2: Unified Rule Registry & Engine Integration', () => {
   describe('1. Registry Public API & Rule Counts', () => {
-    it('legacy getAllRules() must return exactly 41 base rules', () => {
+    it('legacy getAllRules() must return exactly 65 base rules', () => {
       const baseRules = getAllRules();
-      assert.equal(baseRules.length, 41, 'getAllRules() must strictly preserve the 41 base rules contract (including 9 C++ rules)');
+      assert.equal(baseRules.length, 65, 'getAllRules() must strictly preserve the 65 base rules contract');
       
-      // Ensure only Phase 7 and universal secret rule IDs are present
+      // Ensure only Phase 7/base and universal secret rule IDs are present
       assert.ok(baseRules.some((r) => r.ruleId === 'SEC-GEN-001'));
       assert.ok(baseRules.some((r) => r.ruleId === 'RISK-PY-001'));
       assert.ok(baseRules.some((r) => r.ruleId === 'QUAL-JS-001'));
@@ -38,12 +38,15 @@ describe('Phase 9 — Step 2: Unified Rule Registry & Engine Integration', () =>
       assert.ok(baseRules.some((r) => r.ruleId === 'RISK-CPP-005'), 'Must include RISK-CPP-005');
       assert.ok(baseRules.some((r) => r.ruleId === 'RISK-CPP-006'), 'Must include RISK-CPP-006');
       assert.ok(baseRules.some((r) => r.ruleId === 'QUAL-CPP-003'), 'Must include QUAL-CPP-003');
+      assert.ok(baseRules.some((r) => r.ruleId === 'RISK-JAV-004'), 'Must include RISK-JAV-004');
+      assert.ok(baseRules.some((r) => r.ruleId === 'RISK-PY-004'), 'Must include RISK-PY-004');
+      assert.ok(baseRules.some((r) => r.ruleId === 'RISK-C-006'), 'Must include RISK-C-006');
       assert.ok(!baseRules.some((r) => r.ruleId === 'SEC-PY-SQL-001'), 'getAllRules() must not include Phase 9 domain rules');
     });
 
-    it('getAllRegisteredRules() must return all 84 unified rules (41 base + 43 security)', () => {
+    it('getAllRegisteredRules() must return all 108 unified rules (65 base + 43 security)', () => {
       const allRules = getAllRegisteredRules();
-      assert.equal(allRules.length, 84, 'getAllRegisteredRules() must return exactly 84 unified rules');
+      assert.equal(allRules.length, 108, 'getAllRegisteredRules() must return exactly 108 unified rules');
       
       // Verify presence of both Phase 7 and Phase 9 rules
       assert.ok(allRules.some((r) => r.ruleId === 'SEC-GEN-001'), 'Must include universal secrets');
@@ -52,7 +55,7 @@ describe('Phase 9 — Step 2: Unified Rule Registry & Engine Integration', () =>
       assert.ok(allRules.some((r) => r.ruleId === 'SEC-JS-SSRF-001'), 'Must include Phase 9 security rules');
     });
 
-    it('all 84 rule IDs must be globally unique with zero collisions', () => {
+    it('all 108 rule IDs must be globally unique with zero collisions', () => {
       const allRules = getAllRegisteredRules();
       const idSet = new Set();
       const duplicates = [];
@@ -65,33 +68,33 @@ describe('Phase 9 — Step 2: Unified Rule Registry & Engine Integration', () =>
       }
 
       assert.equal(duplicates.length, 0, `Detected duplicate ruleIds: ${duplicates.join(', ')}`);
-      assert.equal(idSet.size, 84, 'Must have exactly 84 unique rule IDs');
+      assert.equal(idSet.size, 108, 'Must have exactly 108 unique rule IDs');
     });
 
     it('getRulesForLanguage() must return exact expected rule counts per language', () => {
-      // Python: 5 (secrets) + 5 (Phase 7) + 11 (Security) = 21
+      // Python: 5 (secrets) + 10 (base) + 11 (Security) = 26
       const pythonRules = getRulesForLanguage('python');
-      assert.equal(pythonRules.length, 21, `Expected 21 Python rules, received ${pythonRules.length}`);
+      assert.equal(pythonRules.length, 26, `Expected 26 Python rules, received ${pythonRules.length}`);
 
-      // JavaScript: 5 (secrets) + 7 (Phase 7) + 15 (Security) = 27
+      // JavaScript: 5 (secrets) + 10 (base) + 15 (Security) = 30
       const jsRules = getRulesForLanguage('javascript');
-      assert.equal(jsRules.length, 27, `Expected 27 JavaScript rules, received ${jsRules.length}`);
+      assert.equal(jsRules.length, 30, `Expected 30 JavaScript rules, received ${jsRules.length}`);
 
-      // TypeScript: 5 (secrets) + 4 (Phase 7) + 15 (Security) = 24
+      // TypeScript: 5 (secrets) + 7 (base) + 15 (Security) = 27
       const tsRules = getRulesForLanguage('typescript');
-      assert.equal(tsRules.length, 24, `Expected 24 TypeScript rules, received ${tsRules.length}`);
+      assert.equal(tsRules.length, 27, `Expected 27 TypeScript rules, received ${tsRules.length}`);
 
-      // Java: 5 (secrets) + 6 (Phase 7) + 8 (Security) = 19
+      // Java: 5 (secrets) + 11 (base) + 8 (Security) = 24
       const javaRules = getRulesForLanguage('java');
-      assert.equal(javaRules.length, 19, `Expected 19 Java rules, received ${javaRules.length}`);
+      assert.equal(javaRules.length, 24, `Expected 24 Java rules, received ${javaRules.length}`);
 
-      // C: 5 (secrets) + 5 (Phase 7) + 6 (Security) = 16
+      // C: 5 (secrets) + 11 (base) + 6 (Security) = 22
       const cRules = getRulesForLanguage('c');
-      assert.equal(cRules.length, 16, `Expected 16 C rules, received ${cRules.length}`);
+      assert.equal(cRules.length, 22, `Expected 22 C rules, received ${cRules.length}`);
 
-      // C++: 5 (secrets) + 9 (base) + 4 (Security) = 18
+      // C++: 5 (secrets) + 11 (base) + 4 (Security) = 20
       const cppRules = getRulesForLanguage('cpp');
-      assert.equal(cppRules.length, 18, `Expected 18 C++ rules, received ${cppRules.length}`);
+      assert.equal(cppRules.length, 20, `Expected 20 C++ rules, received ${cppRules.length}`);
     });
 
     it('unsupported language returns only the 5 universal secret rules', () => {

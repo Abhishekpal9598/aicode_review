@@ -17,6 +17,13 @@ export function RegisterPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
+  // Real-time password requirement flags
+  const hasMinLength = password.length >= 8;
+  const hasLower = /[a-z]/.test(password);
+  const hasUpper = /[A-Z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSpecial = /[^a-zA-Z0-9]/.test(password);
+
   // If already authenticated and not loading session, redirect immediately
   if (!authLoading && isAuthenticated) {
     return <Navigate to="/dashboard" replace />;
@@ -35,8 +42,18 @@ export function RegisterPage() {
       setErrorMessage('Email address is required.');
       return;
     }
+
+    const hasLower = /[a-z]/.test(password);
+    const hasUpper = /[A-Z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecial = /[^a-zA-Z0-9]/.test(password);
+
     if (password.length < 8) {
       setErrorMessage('Password must be at least 8 characters long.');
+      return;
+    }
+    if (!hasLower || !hasUpper || !hasNumber || !hasSpecial) {
+      setErrorMessage('Password must contain at least 1 uppercase letter (A-Z), 1 lowercase letter (a-z), 1 number (0-9), and 1 special symbol (e.g. Sumit@2007).');
       return;
     }
     if (password !== confirmPassword) {
@@ -136,7 +153,7 @@ export function RegisterPage() {
             {/* Password Field */}
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1.5 font-mono">
-                Password (min. 8 characters)
+                Password (min. 8 characters, upper, lower, number, symbol)
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-text-muted">
@@ -146,7 +163,7 @@ export function RegisterPage() {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••••"
+                  placeholder="e.g. Sumit@2007"
                   autoComplete="new-password"
                   required
                   minLength={8}
@@ -162,6 +179,23 @@ export function RegisterPage() {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+
+              {password.length > 0 && (
+                <div className="mt-2 p-2.5 rounded bg-surface-secondary/80 border border-border-subtle text-[11px] font-mono grid grid-cols-2 gap-1.5">
+                  <div className={`flex items-center gap-1.5 ${hasMinLength ? 'text-emerald-400' : 'text-text-muted'}`}>
+                    <CheckCircle2 className="w-3.5 h-3.5" /> 8+ Characters
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${hasUpper ? 'text-emerald-400' : 'text-text-muted'}`}>
+                    <CheckCircle2 className="w-3.5 h-3.5" /> 1 Uppercase (A-Z)
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${hasLower ? 'text-emerald-400' : 'text-text-muted'}`}>
+                    <CheckCircle2 className="w-3.5 h-3.5" /> 1 Lowercase (a-z)
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${hasNumber && hasSpecial ? 'text-emerald-400' : 'text-text-muted'}`}>
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Number & Symbol
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Confirm Password Field */}

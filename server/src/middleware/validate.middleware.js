@@ -28,7 +28,8 @@ export const validate = (schema) => (req, res, next) => {
         field: err.path.join('.') || 'body',
         issue: err.message
       }));
-      return next(new ApiError(400, 'Request validation failed', 'VALIDATION_ERROR', details));
+      const primaryMessage = error.errors[0]?.message || 'Request validation failed';
+      return next(new ApiError(400, primaryMessage, 'VALIDATION_ERROR', details));
     }
     next(error);
   }

@@ -84,7 +84,12 @@ class ApiClient {
           // Token expired or invalidated; clear client token cache
           this.setToken(null);
         }
+        let detailedMessage = null;
+        if (data?.error?.details && Array.isArray(data.error.details) && data.error.details.length > 0) {
+          detailedMessage = data.error.details.map(d => d.issue || d.message).filter(Boolean).join('. ');
+        }
         const error = new Error(
+          detailedMessage ||
           (data && data.error?.message) ||
           (data && data.message) ||
           `Request failed with status ${response.status}`
@@ -92,6 +97,7 @@ class ApiClient {
         error.status = response.status;
         error.code = data?.error?.code || 'HTTP_ERROR';
         error.data = data;
+        error.details = data?.error?.details || null;
         throw error;
       }
 

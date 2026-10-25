@@ -116,7 +116,7 @@ export function analyze(code, language, options = {}) {
       lineStart: 1,
       lineEnd: 1,
       columnStart: 1,
-      columnEnd: 1,
+      columnEnd: Math.max(2, (lines[0] || '').length + 1),
       originalSnippet: lines[0] ? lines[0].slice(0, 100) : '',
       suggestedSnippet: `// Switch selected language to ${detected ? detected.toUpperCase() : 'correct language'}`,
       explanation: `The submitted code exhibits syntax patterns typical of ${detected ? detected.toUpperCase() : 'another language'} (e.g. ${evidenceStr}), but analysis was requested for "${safeLang}". Static analysis rules for ${safeLang.toUpperCase()} cannot parse or evaluate ${detected ? detected.toUpperCase() : 'this'} code, resulting in invalid analysis.`,

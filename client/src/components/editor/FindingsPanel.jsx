@@ -668,10 +668,14 @@ function FindingsPanelBase({
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
                 <h4 className="text-sm font-semibold text-text-primary">
-                  No Issues Detected
+                  {!aiAvailable && reviewMode === 'static-fallback'
+                    ? 'Deterministic Static Audit Complete'
+                    : 'No Issues Detected'}
                 </h4>
                 <p className="text-xs text-text-secondary mt-1 max-w-xs leading-relaxed">
-                  Analysis passed with a clean Grade A rating. No dangerous patterns, security violations, or code hygiene issues found.
+                  {!aiAvailable && reviewMode === 'static-fallback'
+                    ? 'Static analysis detected no rule violations. Note: AI semantic analysis was unavailable (quota/timeout); findings reflect deterministic static audit only.'
+                    : 'Analysis passed with a clean Grade A rating. No dangerous patterns, security violations, or code hygiene issues found.'}
                 </p>
               </div>
             ) : filteredFindings.length === 0 ? (

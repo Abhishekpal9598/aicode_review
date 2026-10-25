@@ -130,9 +130,9 @@ describe('Phase 7: Static Code Analysis Engine', () => {
   // =========================================================================
   // 1. RULE REGISTRY INTEGRITY
   // =========================================================================
-  test('Rule Registry: all 41 rules registered with required fields', () => {
+  test('Rule Registry: all 65 rules registered with required fields', () => {
     const rules = getAllRules();
-    assert.strictEqual(rules.length, 41, 'Expected exactly 41 registered rules');
+    assert.strictEqual(rules.length, 65, 'Expected exactly 65 registered rules');
 
     for (const rule of rules) {
       assert.ok(rule.ruleId, 'Rule must have ruleId');

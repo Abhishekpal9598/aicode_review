@@ -181,6 +181,57 @@ export const cppRules = [
       if (isInsideStringLiteral(targetText, match.index)) return false;
       return true;
     }
+  },
+  {
+    ruleId: 'RISK-CPP-007',
+    name: 'Nullptr Dereference in C++',
+    title: 'Potential nullptr Dereference',
+    category: 'RISK',
+    severity: 'CRITICAL',
+    cwe: 'CWE-476',
+    owaspCategory: 'A04:2021-Insecure Design',
+    confidence: 'HIGH',
+    scanRaw: false,
+    regex: /\b([a-zA-Z_]\w*)\s*=\s*(?:nullptr|NULL)\s*;[\s\S]*?(?:\*\s*\1\b|\b\1\s*->\s*[a-zA-Z_]\w*)/g,
+    explanation:
+      'Dereferencing a pointer holding nullptr or NULL causes a segmentation fault and crash in C++.',
+    suggestedSnippet: 'if (ptr != nullptr) {\n    *ptr = value;\n}',
+    remediation: 'Verify pointers are non-null before dereferencing, or use std::optional or smart pointers.',
+    matchFilter: (match, targetText) => {
+      if (isInsideStringLiteral(targetText, match.index)) return false;
+      const varName = match[1];
+      const matchText = match[0];
+      const firstSemicolon = matchText.indexOf(';');
+      const between = matchText.slice(firstSemicolon + 1);
+      const reassignRegex = new RegExp(`\\b${varName}\\s*=\\s*(?!nullptr|NULL\\b)`);
+      if (reassignRegex.test(between)) return false;
+      const guardRegex = new RegExp(`if\\s*\\([^)]*\\b${varName}\\s*!=\\s*(?:nullptr|NULL)`);
+      if (guardRegex.test(between)) return false;
+      return true;
+    }
+  },
+  {
+    ruleId: 'RISK-CPP-008',
+    name: 'Resource Leak via Unclosed File Handle in C++',
+    title: 'Resource Leak / Unclosed File Handle',
+    category: 'RISK',
+    severity: 'HIGH',
+    cwe: 'CWE-775',
+    owaspCategory: 'A04:2021-Insecure Design',
+    confidence: 'HIGH',
+    scanRaw: false,
+    regex: /\bFILE\s*\*\s*([a-zA-Z_]\w*)\s*=\s*(?:std::)?fopen\s*\([^;)]*\)\s*;/g,
+    explanation:
+      'Using legacy fopen() without calling fclose() leaks operating system file descriptors in C++.',
+    suggestedSnippet: 'std::ifstream file("file.txt"); // RAII auto-closing',
+    remediation: 'Use C++ RAII streams (std::ifstream / std::ofstream) or guarantee fclose() execution.',
+    matchFilter: (match, targetText) => {
+      if (isInsideStringLiteral(targetText, match.index)) return false;
+      const varName = match[1];
+      const postText = targetText.slice(match.index + match[0].length);
+      const closeRegex = new RegExp(`\\b(?:std::)?fclose\\s*\\(\\s*${varName}\\s*\\)`);
+      return !closeRegex.test(postText);
+    }
   }
 ];
 

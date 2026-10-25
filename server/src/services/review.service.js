@@ -107,49 +107,64 @@ export async function executeReview({ code, language, title, fileName, sourceTyp
   // Check for Critical static findings for ceiling enforcement
   const hasCriticalStaticFinding = staticResult.findings.some((f) => f.severity === 'CRITICAL');
 
+  const linesForCoords = safeCode.split(/\r?\n/);
+
   // Convert static findings into ReviewIssue format
-  const staticIssues = staticResult.findings.map((f) => ({
-    category: mapStaticCategory(f.category),
-    severity: f.severity,
-    title: f.title || f.name,
-    description: f.explanation || f.description || f.title,
-    lineStart: f.lineStart,
-    lineEnd: f.lineEnd,
-    columnStart: f.columnStart || 1,
-    columnEnd: f.columnEnd || 1,
-    originalSnippet: f.originalSnippet || '',
-    suggestedSnippet: f.suggestedSnippet || '',
-    explanation: f.explanation || '',
-    ruleId: f.ruleId || null,
-    source: 'static',
-    cwe: f.cwe || null,
-    owaspCategory: f.owaspCategory || null,
-    confidence: f.confidence || null,
-    remediation: f.remediation || ''
-  }));
+  const staticIssues = staticResult.findings.map((f) => {
+    const colStart = Math.max(1, f.columnStart || 1);
+    let colEnd = Math.max(1, f.columnEnd || 1);
+    if (f.lineStart === f.lineEnd && colEnd <= colStart) {
+      const lineLen = (linesForCoords[f.lineStart - 1] || '').length;
+      colEnd = Math.max(colStart + 1, lineLen + 1);
+    }
+    return {
+      category: mapStaticCategory(f.category),
+      severity: f.severity,
+      title: f.title || f.name,
+      description: f.explanation || f.description || f.title,
+      lineStart: f.lineStart,
+      lineEnd: f.lineEnd,
+      columnStart: colStart,
+      columnEnd: colEnd,
+      originalSnippet: f.originalSnippet || '',
+      suggestedSnippet: f.suggestedSnippet || '',
+      explanation: f.explanation || '',
+      ruleId: f.ruleId || null,
+      source: 'static',
+      cwe: f.cwe || null,
+      owaspCategory: f.owaspCategory || null,
+      confidence: f.confidence || null,
+      remediation: f.remediation || ''
+    };
+  });
 
   // Deterministic Performance & Big-O Complexity Evaluation (Phase 10)
   const perfEval = evaluateComplexity(safeCode, safeLang);
-  const performanceIssues = perfEval.findings.map((f) => ({
-    category: 'performance',
-    severity: f.severity,
-    title: f.title,
-    description: f.explanation || f.title,
-    lineStart: f.lineStart,
-    lineEnd: f.lineEnd,
-    columnStart: 1,
-    columnEnd: 1,
-    originalSnippet: f.originalSnippet || '',
-    suggestedSnippet: f.suggestedSnippet || '',
-    explanation: f.explanation || '',
-    ruleId: f.ruleId || null,
-    source: 'static',
-    cwe: null,
-    owaspCategory: null,
-    confidence: f.confidence || 'HIGH',
-    remediation: f.optimization || '',
-    complexityEstimate: f.complexityEstimate || null
-  }));
+  const performanceIssues = perfEval.findings.map((f) => {
+    const colStart = 1;
+    const lineLen = (linesForCoords[f.lineStart - 1] || '').length;
+    const colEnd = f.lineStart === f.lineEnd ? Math.max(colStart + 1, lineLen + 1) : 1;
+    return {
+      category: 'performance',
+      severity: f.severity,
+      title: f.title,
+      description: f.explanation || f.title,
+      lineStart: f.lineStart,
+      lineEnd: f.lineEnd,
+      columnStart: colStart,
+      columnEnd: colEnd,
+      originalSnippet: f.originalSnippet || '',
+      suggestedSnippet: f.suggestedSnippet || '',
+      explanation: f.explanation || '',
+      ruleId: f.ruleId || null,
+      source: 'static',
+      cwe: null,
+      owaspCategory: null,
+      confidence: f.confidence || 'HIGH',
+      remediation: f.optimization || '',
+      complexityEstimate: f.complexityEstimate || null
+    };
+  });
 
   const allStaticIssues = [...staticIssues, ...performanceIssues];
 
